@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Paper Desk — Kronos vs Momentum</title>
+<title>Paper Desk — Kronos vs Momentum + RH menu</title>
 <meta http-equiv="refresh" content="120"/>
 <style>
   :root {
@@ -14,7 +14,7 @@
   * { box-sizing:border-box; }
   html,body { margin:0; background:var(--bg); color:var(--text);
     font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
-  body { padding:20px 16px 40px; max-width:920px; margin:0 auto; }
+  body { padding:20px 16px 40px; max-width:1080px; margin:0 auto; }
   .top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
   h1 { font-size:18px; font-weight:650; margin:0 0 4px; letter-spacing:.02em; }
   .sub { color:var(--muted); font-size:13px; }
@@ -40,6 +40,18 @@
   .honest { margin-top:16px; padding:12px 14px; border:1px dashed #2a3648; border-radius:12px; font-size:13px; color:var(--muted); }
   .honest b { color:var(--text); }
   footer { margin-top:16px; font-size:12px; color:var(--muted); }
+  h2 { font-size:14px; font-weight:650; margin:22px 0 8px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+  table.menu { width:100%; border-collapse:collapse; font-size:13px; }
+  table.menu th { text-align:left; color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.06em; padding:8px 6px; border-bottom:1px solid var(--line); }
+  table.menu td { padding:8px 6px; border-bottom:1px solid #1a2330; vertical-align:middle; }
+  table.menu td.num, table.menu th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  table.menu .chip { display:inline-block; font-weight:750; font-size:11px; letter-spacing:.04em; padding:2px 7px; border-radius:999px; }
+  table.menu .chip.LONG { color:#0b1c14; background:var(--long); }
+  table.menu .chip.SHORT { color:#2a0b12; background:var(--short); }
+  .sleeves { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:12px 0 14px; }
+  @media (max-width:640px){ .sleeves { grid-template-columns:1fr; } }
+  .tiny { font-size:12px; color:var(--muted); margin-top:8px; }
+
 </style>
 </head>
 <body>
@@ -76,6 +88,42 @@
     </div>
   </div>
 
+
+  <h2>RH menu · $500 Kronos vs $500 buy-the-menu</h2>
+  <div class="sleeves">
+    <div class="card">
+      <div class="name">Menu Kronos-mini</div>
+      <div class="eq">$<span id="mkEq">499.75</span></div>
+      <div id="mkPnl" class="pnl">—</div>
+      <div class="meta">
+        <div>10 names × $50 <b>opened</b></div>
+        <div>Fees <b>25¢</b> (5 bps)</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="name">Buy the menu (versus)</div>
+      <div class="eq">$<span id="mvEq">499.75</span></div>
+      <div id="mvPnl" class="pnl">—</div>
+      <div class="meta">
+        <div>Always <b>LONG $50</b></div>
+        <div>Fees <b>25¢</b> (5 bps)</div>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table class="menu">
+      <thead>
+        <tr>
+          <th>Name</th><th>Kronos</th><th>Versus</th>
+          <th class="num">Last</th><th class="num">Pred</th>
+          <th class="num">K P&amp;L</th><th class="num">V P&amp;L</th><th>Feed</th>
+        </tr>
+      </thead>
+      <tbody id="menuBody"></tbody>
+    </table>
+    <div class="tiny">Crypto last = Binance spot. Stock last = Yahoo chart cash/extended. $50 each. Play money.</div>
+  </div>
+
   <div class="card">
     <div class="name">Keep us honest</div>
     <div class="meta" style="grid-template-columns:1fr 1fr;margin-top:10px">
@@ -85,9 +133,11 @@
       <div>Last price tick <b id="lastTick">—</b></div>
       <div>Model <b>NeoQuasar/Kronos-mini</b></div>
       <div>Lookback <b>168 hours</b></div>
+      <div>Menu opened <b>Thu 7:46 PM ET</b></div>
+      <div>Menu names filled <b>10 / 10</b></div>
     </div>
     <div class="honest" id="honest">
-      Both books opened from flat at $500. 25¢ fee each. If BTC is moving and these $ numbers are not, the page is dead — text me.
+      Both BTC books opened from flat at $500. 25¢ fee each. Menu sleeves also $500 each, $50 a name, 25¢ fee a sleeve. If BTC is moving and these $ numbers are not, the page is dead — text me. Play money only. No broker. No Robinhood. No real orders.
     </div>
   </div>
 
@@ -117,10 +167,13 @@ async function tick(){
   const pill = document.getElementById("livepill");
   const live = document.getElementById("livetext");
   try {
-    const r = await fetch("https://data-api.binance.vision/api/v3/ticker/price?symbol=BTCUSDT", {cache:"no-store"});
+    const r = await fetch("https://data-api.binance.vision/api/v3/ticker/price?symbols=%5B%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22%5D", {cache:"no-store"});
     if(!r.ok) throw new Error(r.status);
-    const j = await r.json();
-    const px = parseFloat(j.price);
+    const arr = await r.json();
+    const mp = {}; arr.forEach(x => { mp[x.symbol] = parseFloat(x.price); });
+    const px = mp.BTCUSDT;
+    if(mp.ETHUSDT) lastPx["ETH-USDT"] = mp.ETHUSDT;
+    if(mp.SOLUSDT) lastPx["SOL-USDT"] = mp.SOLUSDT;
     document.getElementById("btc").textContent = fmt(px, 2);
     const k = equity(BOOK.kronos, px);
     const m = equity(BOOK.momentum, px);
@@ -132,6 +185,7 @@ async function tick(){
     mEl.textContent = sign(m.pnl);
     kEl.className = "pnl " + (k.pnl>=0?"up":"dn");
     mEl.className = "pnl " + (m.pnl>=0?"up":"dn");
+    renderMenu();
     const now = new Date();
     document.getElementById("lastTick").textContent = now.toLocaleTimeString("en-US",{timeZone:"America/New_York"}) + " ET";
     document.getElementById("tickage").textContent = "live";
@@ -144,8 +198,95 @@ async function tick(){
   }
 }
 
+
+const MENU = {
+  startEq: 499.75,
+  notional: 50,
+  names: [
+    {name:"ETH-USDT", kind:"crypto", binance:"ETHUSDT", yahoo:null, kronos:"LONG", versus:"LONG", entry:2510.56, pred:2523.32055664},
+    {name:"SOL-USDT", kind:"crypto", binance:"SOLUSDT", yahoo:null, kronos:"SHORT", versus:"LONG", entry:109.12, pred:104.88875580},
+    {name:"SPY", kind:"stock", binance:null, yahoo:"SPY", kronos:"SHORT", versus:"LONG", entry:769.7697, pred:765.10491943},
+    {name:"QQQ", kind:"stock", binance:null, yahoo:"QQQ", kronos:"SHORT", versus:"LONG", entry:718.88, pred:712.23699951},
+    {name:"NVDA", kind:"stock", binance:null, yahoo:"NVDA", kronos:"LONG", versus:"LONG", entry:226.25, pred:231.96197510},
+    {name:"TSLA", kind:"stock", binance:null, yahoo:"TSLA", kronos:"LONG", versus:"LONG", entry:354.5783, pred:361.22018433},
+    {name:"AAPL", kind:"stock", binance:null, yahoo:"AAPL", kronos:"LONG", versus:"LONG", entry:314.67, pred:314.89840698},
+    {name:"AMZN", kind:"stock", binance:null, yahoo:"AMZN", kronos:"SHORT", versus:"LONG", entry:256.30, pred:254.38442993},
+    {name:"META", kind:"stock", binance:null, yahoo:"META", kronos:"SHORT", versus:"LONG", entry:571.4494, pred:558.73815918},
+    {name:"AMD", kind:"stock", binance:null, yahoo:"AMD", kronos:"SHORT", versus:"LONG", entry:474.61, pred:459.72753906}
+  ]
+};
+const lastPx = {};
+MENU.names.forEach(n => { lastPx[n.name] = n.entry; });
+function renderMenu(){
+  const body = document.getElementById("menuBody");
+  if(!body) return;
+  let kPnl = 0, vPnl = 0;
+  body.innerHTML = MENU.names.map(n => {
+    const px = lastPx[n.name];
+    const k = equity(n.kronos, px);
+    const v = equity(n.versus, px);
+    // per-name $50 book, not BTC $500 helper
+    const kn = (px - n.entry) / n.entry * MENU.notional;
+    const kp = n.kronos === "LONG" ? kn : -kn;
+    const vp = n.versus === "LONG" ? kn : -kn;
+    kPnl += kp; vPnl += vp;
+    const feed = n.kind === "crypto" ? "Binance" : "Yahoo";
+    return "<tr><td><b>"+n.name+"</b></td>"
+      +"<td><span class='chip "+n.kronos+"'>"+n.kronos+"</span></td>"
+      +"<td><span class='chip "+n.versus+"'>"+n.versus+"</span></td>"
+      +"<td class='num'>"+fmt(px)+"</td>"
+      +"<td class='num'>"+fmt(n.pred)+"</td>"
+      +"<td class='num "+(kp>=0?"up":"dn")+"'>"+sign(kp)+"</td>"
+      +"<td class='num "+(vp>=0?"up":"dn")+"'>"+sign(vp)+"</td>"
+      +"<td>"+feed+"</td></tr>";
+  }).join("");
+  document.getElementById("mkEq").textContent = fmt(MENU.startEq + kPnl);
+  document.getElementById("mvEq").textContent = fmt(MENU.startEq + vPnl);
+  const mk = document.getElementById("mkPnl");
+  const mv = document.getElementById("mvPnl");
+  mk.textContent = sign(kPnl); mv.textContent = sign(vPnl);
+  mk.className = "pnl " + (kPnl>=0?"up":"dn");
+  mv.className = "pnl " + (vPnl>=0?"up":"dn");
+}
+function parseYahooChart(j){
+  const r = j && j.chart && j.chart.result && j.chart.result[0];
+  if(!r) throw new Error("yahoo empty");
+  const m = r.meta || {};
+  if(m.postMarketPrice != null) return parseFloat(m.postMarketPrice);
+  if(m.regularMarketPrice != null) return parseFloat(m.regularMarketPrice);
+  const closes = (((r.indicators||{}).quote||[])[0]||{}).close || [];
+  for(let i=closes.length-1;i>=0;i--){ if(closes[i]!=null) return parseFloat(closes[i]); }
+  throw new Error("yahoo no price");
+}
+async function fetchJson(url){
+  const r = await fetch(url, {cache:"no-store"});
+  if(!r.ok) throw new Error(r.status);
+  return r.json();
+}
+async function yahooLast(sym){
+  const path = "https://query1.finance.yahoo.com/v8/finance/chart/"+sym+"?interval=1d&range=1d&includePrePost=true";
+  try { return parseYahooChart(await fetchJson(path)); }
+  catch(e){
+    const proxied = "https://api.allorigins.win/raw?url=" + encodeURIComponent(path);
+    return parseYahooChart(await fetchJson(proxied));
+  }
+}
+
+let stockCursor = 0;
+async function tickOneStock(){
+  const stocks = MENU.names.filter(n => n.kind === "stock");
+  const n = stocks[stockCursor % stocks.length];
+  stockCursor++;
+  try {
+    const px = await yahooLast(n.yahoo);
+    if(Number.isFinite(px)) { lastPx[n.name] = px; renderMenu(); }
+  } catch(e) {}
+}
+renderMenu();
 setInterval(tick, 3000);
 tick();
+setInterval(tickOneStock, 4000);
+tickOneStock();
 </script>
 </body>
 </html>
