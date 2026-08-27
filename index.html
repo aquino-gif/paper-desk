@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Paper Desk — Kronos vs Momentum</title>
+<meta http-equiv="refresh" content="120"/>
+<style>
+  :root {
+    --bg:#0b0f14; --card:#121821; --line:#1e2836;
+    --text:#e8eef6; --muted:#8b98a8; --short:#ff5c7a; --long:#3ee0a1;
+    --warn:#ffc857; --live:#3ee0a1;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+  body { padding:20px 16px 40px; max-width:920px; margin:0 auto; }
+  .top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+  h1 { font-size:18px; font-weight:650; margin:0 0 4px; letter-spacing:.02em; }
+  .sub { color:var(--muted); font-size:13px; }
+  .pill { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+    padding:4px 10px; border-radius:999px; background:#10241c; color:var(--live); }
+  .pill .dot { width:7px; height:7px; border-radius:50%; background:var(--live); box-shadow:0 0 8px var(--live); }
+  .pill.dead { background:#2a1a14; color:#ff8b6b; }
+  .pill.dead .dot { background:#ff8b6b; box-shadow:none; }
+  .price { font-size:48px; font-weight:720; letter-spacing:-.03em; margin:18px 0 4px; }
+  .price small { font-size:16px; color:var(--muted); font-weight:500; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:18px 0; }
+  @media (max-width:640px){ .row { grid-template-columns:1fr; } .price{font-size:36px;} }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 16px 14px; }
+  .name { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+  .side { font-size:28px; font-weight:750; margin:6px 0 2px; }
+  .side.SHORT { color:var(--short); } .side.LONG { color:var(--long); }
+  .eq { font-size:32px; font-weight:720; letter-spacing:-.02em; }
+  .pnl { font-size:15px; font-weight:650; margin-top:4px; }
+  .up { color:var(--long); } .dn { color:var(--short); }
+  .meta { display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; margin-top:8px; }
+  .meta div { font-size:13px; color:var(--muted); }
+  .meta b { color:var(--text); font-weight:650; }
+  .honest { margin-top:16px; padding:12px 14px; border:1px dashed #2a3648; border-radius:12px; font-size:13px; color:var(--muted); }
+  .honest b { color:var(--text); }
+  footer { margin-top:16px; font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h1>Paper Desk</h1>
+      <div class="sub">$500 Kronos vs $500 momentum · BTC · play money · through Thu Sep 3</div>
+    </div>
+    <div id="livepill" class="pill"><span class="dot"></span><span id="livetext">LIVE</span></div>
+  </div>
+
+  <div class="price">$<span id="btc">—</span> <small>BTC-USDT · <span id="tickage">waiting</span></small></div>
+
+  <div class="row">
+    <div class="card">
+      <div class="name">Kronos-mini</div>
+      <div id="kSide" class="side SHORT">SHORT</div>
+      <div class="eq">$<span id="kEq">499.75</span></div>
+      <div id="kPnl" class="pnl">—</div>
+      <div class="meta">
+        <div>Target 24h <b id="kPred">79,572</b></div>
+        <div>Entry <b>80,264.80</b></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="name">Momentum (versus)</div>
+      <div id="mSide" class="side LONG">LONG</div>
+      <div class="eq">$<span id="mEq">499.75</span></div>
+      <div id="mPnl" class="pnl">—</div>
+      <div class="meta">
+        <div>Yesterday <b>+1.85%</b></div>
+        <div>Entry <b>80,264.80</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="name">Keep us honest</div>
+    <div class="meta" style="grid-template-columns:1fr 1fr;margin-top:10px">
+      <div>Ticket written <b>Thu 6:49 PM ET</b></div>
+      <div>Next official mark <b>Fri 6:49 PM</b></div>
+      <div>Morning check <b>9:47 AM daily</b></div>
+      <div>Last price tick <b id="lastTick">—</b></div>
+      <div>Model <b>NeoQuasar/Kronos-mini</b></div>
+      <div>Lookback <b>168 hours</b></div>
+    </div>
+    <div class="honest" id="honest">
+      Both books opened from flat at $500. 25¢ fee each. If BTC is moving and these $ numbers are not, the page is dead — text me.
+    </div>
+  </div>
+
+  <footer>No real broker. Chief + Tape. If the LIVE pill goes stale, the desk fell asleep.</footer>
+
+<script>
+const BOOK = {
+  entry: 80264.80,
+  notional: 500,
+  startEq: 499.75,
+  kronos: "SHORT",
+  momentum: "LONG",
+  pred: 79571.578125,
+  ticketMs: Date.parse("2026-08-27T18:49:11-04:00"),
+  endMs: Date.parse("2026-09-03T18:49:11-04:00")
+};
+
+function fmt(n, d=2){ return n.toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function sign(n){ const v = (n>=0?"+":"") + fmt(n); return v; }
+function equity(side, px){
+  const chg = (px - BOOK.entry) / BOOK.entry * BOOK.notional;
+  const pnl = side === "LONG" ? chg : -chg;
+  return { eq: BOOK.startEq + pnl, pnl };
+}
+
+async function tick(){
+  const pill = document.getElementById("livepill");
+  const live = document.getElementById("livetext");
+  try {
+    const r = await fetch("https://data-api.binance.vision/api/v3/ticker/price?symbol=BTCUSDT", {cache:"no-store"});
+    if(!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    const px = parseFloat(j.price);
+    document.getElementById("btc").textContent = fmt(px, 2);
+    const k = equity(BOOK.kronos, px);
+    const m = equity(BOOK.momentum, px);
+    document.getElementById("kEq").textContent = fmt(k.eq);
+    document.getElementById("mEq").textContent = fmt(m.eq);
+    const kEl = document.getElementById("kPnl");
+    const mEl = document.getElementById("mPnl");
+    kEl.textContent = sign(k.pnl);
+    mEl.textContent = sign(m.pnl);
+    kEl.className = "pnl " + (k.pnl>=0?"up":"dn");
+    mEl.className = "pnl " + (m.pnl>=0?"up":"dn");
+    const now = new Date();
+    document.getElementById("lastTick").textContent = now.toLocaleTimeString("en-US",{timeZone:"America/New_York"}) + " ET";
+    document.getElementById("tickage").textContent = "live";
+    pill.classList.remove("dead");
+    live.textContent = "LIVE";
+  } catch(e){
+    document.getElementById("tickage").textContent = "feed down";
+    pill.classList.add("dead");
+    live.textContent = "FEED DOWN";
+  }
+}
+
+setInterval(tick, 3000);
+tick();
+</script>
+</body>
+</html>
