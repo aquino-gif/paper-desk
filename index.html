@@ -69,21 +69,21 @@
     <div class="card">
       <div class="name">Kronos-base</div>
       <div id="kSide" class="side SHORT">SHORT</div>
-      <div class="eq">$<span id="kEq">499.75</span></div>
+      <div class="eq">$<span id="kEq">509.21</span></div>
       <div id="kPnl" class="pnl">—</div>
       <div class="meta">
-        <div>Target 24h <b id="kPred">80,257</b></div>
-        <div>Entry <b>80,268.06</b></div>
+        <div>Target 24h <b id="kPred">76,401</b></div>
+        <div>Entry <b>78,749.98</b></div>
       </div>
     </div>
     <div class="card">
       <div class="name">Momentum (versus)</div>
-      <div id="mSide" class="side LONG">LONG</div>
-      <div class="eq">$<span id="mEq">499.75</span></div>
+      <div id="mSide" class="side SHORT">SHORT</div>
+      <div class="eq">$<span id="mEq">490.04</span></div>
       <div id="mPnl" class="pnl">—</div>
       <div class="meta">
-        <div>Yesterday <b>+2.04%</b></div>
-        <div>Entry <b>80,268.06</b></div>
+        <div>Yesterday <b>-0.25%</b></div>
+        <div>Entry <b>78,749.98</b></div>
       </div>
     </div>
   </div>
@@ -130,8 +130,8 @@
   <div class="card">
     <div class="name">Keep us honest</div>
     <div class="meta" style="grid-template-columns:1fr 1fr;margin-top:10px">
-      <div>Ticket written <b>Thu 7:52 PM ET</b></div>
-      <div>Next official mark <b>Fri 7:52 PM</b></div>
+      <div>Ticket written <b>Fri 10:18 AM ET</b></div>
+      <div>Next official mark <b>Sat 10:18 AM</b></div>
       <div>Morning check <b>9:47 AM daily</b></div>
       <div>Last price tick <b id="lastTick">—</b></div>
       <div>Model <b>NeoQuasar/Kronos-base</b></div>
@@ -148,22 +148,27 @@
 
 <script>
 const BOOK = {
-  entry: 80268.06,
+  entry: 78749.98000000,
   notional: 500,
-  startEq: 499.75,
+  startEq: 509.2063,
+  kStartEq: 509.2063,
+  mStartEq: 490.0437,
   kronos: "SHORT",
-  momentum: "LONG",
-  pred: 80256.84375,
-  ticketMs: Date.parse("2026-08-27T19:52:18-04:00"),
+  momentum: "SHORT",
+  pred: 76401.1015625,
+  ticketMs: Date.parse("2026-08-28T10:18:07.759431-04:00"),
   endMs: Date.parse("2026-09-03T19:52:18-04:00")
 };
 
 function fmt(n, d=2){ return n.toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d}); }
 function sign(n){ const v = (n>=0?"+":"") + fmt(n); return v; }
-function equity(side, px){
+function equity(side, px, which){
   const chg = (px - BOOK.entry) / BOOK.entry * BOOK.notional;
   const pnl = side === "LONG" ? chg : -chg;
-  return { eq: BOOK.startEq + pnl, pnl };
+  const base = which === "m" ? (BOOK.mStartEq ?? BOOK.startEq)
+            : which === "k" ? (BOOK.kStartEq ?? BOOK.startEq)
+            : BOOK.startEq;
+  return { eq: base + pnl, pnl };
 }
 
 async function tick(){
@@ -178,8 +183,8 @@ async function tick(){
     if(mp.ETHUSDT) lastPx["ETH-USDT"] = mp.ETHUSDT;
     if(mp.SOLUSDT) lastPx["SOL-USDT"] = mp.SOLUSDT;
     document.getElementById("btc").textContent = fmt(px, 2);
-    const k = equity(BOOK.kronos, px);
-    const m = equity(BOOK.momentum, px);
+    const k = equity(BOOK.kronos, px, "k");
+    const m = equity(BOOK.momentum, px, "m");
     document.getElementById("kEq").textContent = fmt(k.eq);
     document.getElementById("mEq").textContent = fmt(m.eq);
     const kEl = document.getElementById("kPnl");
