@@ -52,6 +52,17 @@
   @media (max-width:640px){ .sleeves { grid-template-columns:1fr; } }
   .tiny { font-size:12px; color:var(--muted); margin-top:8px; }
 
+  .tabs { display:flex; gap:8px; margin:14px 0 0; }
+  .tab { border:1px solid var(--line); background:transparent; color:var(--muted);
+    font: inherit; font-size:13px; font-weight:650; padding:6px 14px; border-radius:999px; cursor:pointer; }
+  .tab.on { background:#1a2736; color:var(--text); border-color:#2d3d52; }
+  .winbadge { display:inline-block; font-size:11px; font-weight:750; letter-spacing:.08em;
+    color:#0b1c14; background:var(--long); padding:2px 8px; border-radius:999px; margin-left:8px; vertical-align:middle; }
+  body.winning .row, body.winning .sleeves { grid-template-columns:1fr; }
+  body.winning .lose { display:none; }
+  body.winning .all-only { display:none; }
+  body.winning #menuTableWrap.lose-table { display:none; }
+
 </style>
 </head>
 <body>
@@ -63,11 +74,16 @@
     <div id="livepill" class="pill"><span class="dot"></span><span id="livetext">LIVE</span></div>
   </div>
 
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab" id="tabAll" onclick="setTab('all')">All</button>
+    <button type="button" class="tab on" id="tabWinning" onclick="setTab('winning')">Winning</button>
+  </div>
+
   <div class="price">$<span id="btc">—</span> <small>BTC-USDT · <span id="tickage">waiting</span></small></div>
 
   <div class="row">
-    <div class="card">
-      <div class="name">Kronos-base</div>
+    <div class="card" id="kCard">
+      <div class="name">Kronos-base <span class="winbadge" id="kWin" hidden>WINNING</span></div>
       <div id="kSide" class="side SHORT">SHORT</div>
       <div class="eq">$<span id="kEq">509.21</span></div>
       <div id="kPnl" class="pnl">—</div>
@@ -76,8 +92,8 @@
         <div>Entry <b>78,749.98</b></div>
       </div>
     </div>
-    <div class="card">
-      <div class="name">Momentum (versus)</div>
+    <div class="card" id="mCard">
+      <div class="name">Momentum (versus) <span class="winbadge" id="mWin" hidden>WINNING</span></div>
       <div id="mSide" class="side SHORT">SHORT</div>
       <div class="eq">$<span id="mEq">490.04</span></div>
       <div id="mPnl" class="pnl">—</div>
@@ -89,13 +105,13 @@
   </div>
 
 
-  <div class="tiny" id="firstRunMini" style="margin:-6px 0 14px">first run: mini SHORT at 80264.80 · pred 79571.58 · left as receipt, not this official book</div>
+  <div class="tiny all-only" id="firstRunMini" style="margin:-6px 0 14px">first run: mini SHORT at 80264.80 · pred 79571.58 · left as receipt, not this official book</div>
   <div class="tiny" style="margin:-10px 0 16px">Official book is Kronos-base on CPU (torch 2.13.0+cpu, cuda=false, no GPU). Play money only.</div>
 
   <h2>RH menu · $500 Kronos vs $500 buy-the-menu</h2>
   <div class="sleeves">
-    <div class="card">
-      <div class="name">Menu Kronos-mini</div>
+    <div class="card" id="mkCard">
+      <div class="name">Menu Kronos-mini <span class="winbadge" id="mkWin" hidden>WINNING</span></div>
       <div class="eq">$<span id="mkEq">499.75</span></div>
       <div id="mkPnl" class="pnl">—</div>
       <div class="meta">
@@ -103,8 +119,8 @@
         <div>Fees <b>25¢</b> (5 bps)</div>
       </div>
     </div>
-    <div class="card">
-      <div class="name">Buy the menu (versus)</div>
+    <div class="card" id="mvCard">
+      <div class="name">Buy the menu (versus) <span class="winbadge" id="mvWin" hidden>WINNING</span></div>
       <div class="eq">$<span id="mvEq">499.75</span></div>
       <div id="mvPnl" class="pnl">—</div>
       <div class="meta">
@@ -113,7 +129,7 @@
       </div>
     </div>
   </div>
-  <div class="card" style="overflow-x:auto">
+  <div class="card" id="menuTableWrap" style="overflow-x:auto">
     <table class="menu">
       <thead>
         <tr>
@@ -160,6 +176,52 @@ const BOOK = {
   endMs: Date.parse("2026-09-03T19:52:18-04:00")
 };
 
+
+let TAB = "winning";
+function setTab(name){
+  TAB = name;
+  document.body.classList.toggle("winning", name === "winning");
+  document.getElementById("tabAll").classList.toggle("on", name === "all");
+  document.getElementById("tabWinning").classList.toggle("on", name === "winning");
+  applyWinning();
+}
+function showWin(id, on){
+  const el = document.getElementById(id);
+  if(el) el.hidden = !on;
+}
+function applyWinning(){
+  const kEq = parseFloat(String(document.getElementById("kEq").textContent).replace(/,/g,""));
+  const mEq = parseFloat(String(document.getElementById("mEq").textContent).replace(/,/g,""));
+  const mkEq = parseFloat(String(document.getElementById("mkEq").textContent).replace(/,/g,""));
+  const mvEq = parseFloat(String(document.getElementById("mvEq").textContent).replace(/,/g,""));
+  const kAhead = kEq > mEq + 0.005;
+  const mAhead = mEq > kEq + 0.005;
+  const mkAhead = mkEq > mvEq + 0.005;
+  const mvAhead = mvEq > mkEq + 0.005;
+  showWin("kWin", kAhead);
+  showWin("mWin", mAhead);
+  showWin("mkWin", mkAhead);
+  showWin("mvWin", mvAhead);
+  const hideLosers = TAB === "winning";
+  document.getElementById("kCard").classList.toggle("lose", hideLosers && mAhead);
+  document.getElementById("mCard").classList.toggle("lose", hideLosers && kAhead);
+  document.getElementById("mkCard").classList.toggle("lose", hideLosers && mvAhead);
+  document.getElementById("mvCard").classList.toggle("lose", hideLosers && mkAhead);
+}
+document.body.classList.add("winning");
+if (location.hash === "#all") setTab("all");
+else setTab("winning");
+window.addEventListener("hashchange", function(){
+  setTab(location.hash === "#all" ? "all" : "winning");
+});
+const _setTab = setTab;
+setTab = function(name){
+  _setTab(name);
+  const h = name === "all" ? "#all" : "#winning";
+  if (location.hash !== h) history.replaceState(null, "", h);
+};
+
+
 function fmt(n, d=2){ return n.toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d}); }
 function sign(n){ const v = (n>=0?"+":"") + fmt(n); return v; }
 function equity(side, px, which){
@@ -194,6 +256,7 @@ async function tick(){
     kEl.className = "pnl " + (k.pnl>=0?"up":"dn");
     mEl.className = "pnl " + (m.pnl>=0?"up":"dn");
     renderMenu();
+    applyWinning();
     const now = new Date();
     document.getElementById("lastTick").textContent = now.toLocaleTimeString("en-US",{timeZone:"America/New_York"}) + " ET";
     document.getElementById("tickage").textContent = "live";
@@ -255,6 +318,7 @@ function renderMenu(){
   mk.textContent = sign(kPnl); mv.textContent = sign(vPnl);
   mk.className = "pnl " + (kPnl>=0?"up":"dn");
   mv.className = "pnl " + (vPnl>=0?"up":"dn");
+  applyWinning();
 }
 function parseYahooChart(j){
   const r = j && j.chart && j.chart.result && j.chart.result[0];
