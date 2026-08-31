@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Chief — Pending board</title>
+<style>
+  :root {
+    --bg:#0b0f14; --card:#121821; --line:#1e2836; --text:#e8eef6;
+    --muted:#8b98a8; --you:#ffc857; --me:#3ee0a1; --hold:#ff5c7a;
+    --open:#1a2430;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+  body { padding:20px 16px 48px; max-width:980px; margin:0 auto; }
+  .top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+  h1 { font-size:18px; font-weight:650; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; max-width:42em; }
+  .stamp { font-size:12px; color:var(--muted); }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:18px; }
+  @media (max-width:720px){ .cols { grid-template-columns:1fr; } }
+  h2 { font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:0 0 8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 14px 12px; margin:0 0 10px; cursor:pointer; }
+  .card:hover { border-color:#2d3c52; }
+  .card.open { border-color:#3d5a80; background:var(--open); }
+  .num { font-size:12px; font-weight:700; color:var(--you); }
+  .you .num { color:var(--you); }
+  .me .num { color:var(--me); }
+  .title { font-size:15px; font-weight:650; margin:4px 0 6px; }
+  .one { font-size:13px; color:var(--muted); }
+  .sample { display:none; margin-top:10px; padding:10px 12px; border-radius:10px; background:#0c1118; border:1px dashed #2a3648; font-size:13px; color:#c5d0dc; white-space:pre-wrap; }
+  .card.open .sample { display:block; }
+  .who { font-size:11px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; margin-bottom:2px; }
+  .you .who { color:var(--you); }
+  .me .who { color:var(--me); }
+  .hint { margin-top:16px; font-size:13px; color:var(--muted); }
+  a { color:#8ec8ff; }
+  .sel { outline:2px solid #ffc857; }
+
+  #lock { position:fixed; inset:0; background:#0b0f14; z-index:50; display:flex; align-items:center; justify-content:center; padding:24px; }
+  #lock.ok { display:none; }
+  .lockbox { width:100%; max-width:340px; background:#121821; border:1px solid #1e2836; border-radius:16px; padding:22px 20px 18px; }
+  .lockbox h2 { margin:0 0 6px; font-size:18px; }
+  .lockbox p { margin:0 0 14px; color:#8b98a8; font-size:13px; }
+  .lockbox input { width:100%; background:#0c1118; border:1px solid #2a3648; color:#e8eef6; border-radius:10px; padding:12px 12px; font-size:16px; }
+  .lockbox button { margin-top:10px; width:100%; border:0; border-radius:10px; padding:12px; font-weight:700; background:#ffc857; color:#0b0f14; cursor:pointer; }
+  .lockbox .err { display:none; color:#ff5c7a; font-size:12px; margin-top:8px; }
+
+</style>
+</head>
+<body>
+
+<div id="lock">
+  <form class="lockbox" onsubmit="return go(event)">
+    <h2>Pending board</h2>
+    <p>Private. Enter the passcode.</p>
+    <input id="pw" type="password" autocomplete="current-password" autofocus/>
+    <button type="submit">Open</button>
+    <div class="err" id="err">Wrong code.</div>
+  </form>
+</div>
+  <div class="top">
+    <div>
+      <h1>Pending board</h1>
+      <div class="sub">Click a card. That’s the one we take care of. Sample is underneath so you can approve before I act. Reply in chat with the number.</div>
+    </div>
+    <div class="stamp">Sun Aug 30, 2026 · 9:40 PM ET</div>
+  </div>
+
+  <div class="cols">
+    <section>
+      <h2>Needs you</h2>
+
+      <div class="card you" data-id="1" id="n1">
+        <div class="who">Needs you · pantry</div>
+        <div class="num">1</div>
+        <div class="title">Send the 9 AM time-change text</div>
+        <div class="one">1,185 unique phones. 107 still importing into Vivery. Nothing sent.</div>
+        <div class="sample">SAMPLE (not sent)
+Queridos hermanos, por las próximas 3 semanas las inscripciones comienzan a las 9:00 AM. Te esperamos el domingo. Puedes invitar a otros. Dirección: 1751 NW 36 ST Bendiciones!
+
+Reply: “send 1” after the 107 are in. I will preview 305-590-7213 first.</div>
+      </div>
+
+      <div class="card you" data-id="2" id="n2">
+        <div class="who">Needs you · travel</div>
+        <div class="num">2</div>
+        <div class="title">Giselle Mérida ticket</div>
+        <div class="one">AA nonstop 10:45 AM MIA→MID. I said buy now. I still don’t have a live booking in hand.</div>
+        <div class="sample">SAMPLE
+Buy Giselle a paid AA seat on YOUR 10:45 nonstop (you fly employee). $518 on the dates in your screenshot. Google’s $250 is Oct 24–27, not waiting.
+Reply: “buy 2” and the exact dates if they aren’t Oct 24–27.</div>
+      </div>
+
+      <div class="card you" data-id="3" id="n3">
+        <div class="who">Needs you · pantry intake</div>
+        <div class="num">3</div>
+        <div class="title">60-second intake for the next 3 weeks</div>
+        <div class="one">You asked me to reverse-engineer it. I asked 5 questions. I never built it.</div>
+        <div class="sample">SAMPLE FLOW
+Window: snap license + grab phone + one income question. Under a minute. I fill the rest from the photo after the line.
+Still need: does Oasis have to be done before they get food? First-timers only or also return visits? Phone or laptop camera? No-ID people served?
+Reply: “build 3” plus those answers.</div>
+      </div>
+
+      <div class="card you" data-id="4" id="n4">
+        <div class="who">Needs you · CSFP</div>
+        <div class="num">4</div>
+        <div class="title">Waitlist 19 (Never Certified)</div>
+        <div class="one">Emailed Emily 8/28. No reply. Holding until she says who was screened vs boxed.</div>
+        <div class="sample">SAMPLE
+Do not activate the 19 until Emily confirms.
+Reply: “ping Emily” or “hold 4”.</div>
+      </div>
+
+      <div class="card you" data-id="5" id="n5">
+        <div class="who">Needs you · eBay</div>
+        <div class="num">5</div>
+        <div class="title">Refund due Aug 31 — Honda Pilot radar</div>
+        <div class="one">Return 5327508393, order 04-15038-57471, buyer jjrochelle. Item back. Refund clock is tomorrow.</div>
+        <div class="sample">SAMPLE
+Refund the Honda Pilot front radar 36800-TG7-A12.
+Reply: “refund 5” and I route Store Ops, or you do it in eBay.</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>I'm on it</h2>
+
+      <div class="card me" data-id="6" id="n6">
+        <div class="who">I'm on it</div>
+        <div class="num">6</div>
+        <div class="title">Import 107 missing 120-day phones</div>
+        <div class="one">So the 9 AM blast can actually reach 1,185. No texts until you say send.</div>
+        <div class="sample">In progress. Import into Vivery Location 6270. No SMS.</div>
+      </div>
+
+      <div class="card me" data-id="7" id="n7">
+        <div class="who">I'm on it</div>
+        <div class="num">7</div>
+        <div class="title">Kronos $500 paper week</div>
+        <div class="one">Through Thu Sep 3. Live at paper-desk. CPU, not Mac GPU.</div>
+        <div class="sample">Sun mark: Kronos LONG $507.95 · momentum LONG $488.78.
+https://aquino-gif.github.io/paper-desk/#winning</div>
+      </div>
+
+      <div class="card me" data-id="8" id="n8">
+        <div class="who">Closed this weekend · still on the board as receipt</div>
+        <div class="num">8</div>
+        <div class="title">This week’s 33 new intakes → Vivery</div>
+        <div class="one">Import 6618, 33/33 successful. Eduardo Navarro (2) and Dionys Castro (1) logged the 3 with no phone.</div>
+        <div class="sample">Done. No texts to the 33.</div>
+      </div>
+    </section>
+  </div>
+
+  <p class="hint">Click a card, then tell me the number in this chat. I will not send, refund, or email until you approve that card. Board file: pending-board on my computer; live link after it publishes next to Paper Desk.</p>
+
+<script>
+
+const CODE='bethany9';
+function unlocked(){ return sessionStorage.getItem('chief-board')==='1'; }
+function go(e){
+  e.preventDefault();
+  const v=document.getElementById('pw').value.trim();
+  if(v===CODE){ sessionStorage.setItem('chief-board','1'); document.getElementById('lock').classList.add('ok'); return false; }
+  document.getElementById('err').style.display='block';
+  return false;
+}
+if(unlocked()) document.getElementById('lock').classList.add('ok');
+  const cards=[...document.querySelectorAll('.card')];
+  cards.forEach(c=>c.addEventListener('click',()=>{
+    cards.forEach(x=>x.classList.remove('open','sel'));
+    c.classList.add('open','sel');
+    history.replaceState(null,'','#'+c.id);
+  }));
+  if(location.hash){
+    const el=document.querySelector(location.hash);
+    if(el){ el.classList.add('open','sel'); el.scrollIntoView({block:'center'}); }
+  }
+</script>
+</body>
+</html>
