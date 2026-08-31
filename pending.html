@@ -37,7 +37,6 @@
   .hint { margin-top:16px; font-size:13px; color:var(--muted); }
   a { color:#8ec8ff; }
   .sel { outline:2px solid #ffc857; }
-
   #lock { position:fixed; inset:0; background:#0b0f14; z-index:50; display:flex; align-items:center; justify-content:center; padding:24px; }
   #lock.ok { display:none; }
   .lockbox { width:100%; max-width:340px; background:#121821; border:1px solid #1e2836; border-radius:16px; padding:22px 20px 18px; }
@@ -46,11 +45,9 @@
   .lockbox input { width:100%; background:#0c1118; border:1px solid #2a3648; color:#e8eef6; border-radius:10px; padding:12px 12px; font-size:16px; }
   .lockbox button { margin-top:10px; width:100%; border:0; border-radius:10px; padding:12px; font-weight:700; background:#ffc857; color:#0b0f14; cursor:pointer; }
   .lockbox .err { display:none; color:#ff5c7a; font-size:12px; margin-top:8px; }
-
 </style>
 </head>
 <body>
-
 <div id="lock">
   <form class="lockbox" onsubmit="return go(event)">
     <h2>Pending board</h2>
@@ -63,84 +60,137 @@
   <div class="top">
     <div>
       <h1>Pending board</h1>
-      <div class="sub">Click a card. That’s the one we take care of. Sample is underneath so you can approve before I act. Reply in chat with the number.</div>
+      <div class="sub">Rebuilt from the full conversation. Only unfinished threads. Click a card, then reply with the number. Done items stay off.</div>
     </div>
-    <div class="stamp">Sun Aug 30, 2026 · 9:54 PM ET</div>
+    <div class="stamp">Sun Aug 30, 2026 · 9:56 PM ET</div>
   </div>
 
   <div class="cols">
     <section>
       <h2>Needs you</h2>
 
+      <div class="card you" data-id="1" id="n1">
+        <div class="who">Needs you · travel</div>
+        <div class="num">1</div>
+        <div class="title">Giselle Mérida ticket</div>
+        <div class="one">AA nonstop 10:45 AM MIA→MID. I said buy now. No ticket in hand. She needs a paid seat on YOUR employee flight, not Viva.</div>
+        <div class="sample">SAMPLE
+$518 on the dates in her screenshot. Google $250 is Oct 24–27 if you can move.
+Reply: “buy 1” + the exact dates.</div>
+      </div>
 
       <div class="card you" data-id="2" id="n2">
         <div class="who">Needs you · travel</div>
         <div class="num">2</div>
-        <div class="title">Giselle Mérida ticket</div>
-        <div class="one">AA nonstop 10:45 AM MIA→MID. I said buy now. I still don’t have a live booking in hand.</div>
-        <div class="sample">SAMPLE
-Buy Giselle a paid AA seat on YOUR 10:45 nonstop (you fly employee). $518 on the dates in your screenshot. Google’s $250 is Oct 24–27, not waiting.
-Reply: “buy 2” and the exact dates if they aren’t Oct 24–27.</div>
+        <div class="title">Bangkok Dec 18–29 (family of 4)</div>
+        <div class="one">Emailed Giselle twice (Sat 8/22 and Sun 8/23). She has not replied. Nothing booked. Moppet leftover sale at CentralWorld. Fly the 16th if you want day 1 of the sale.</div>
+        <div class="sample">LOCKED NUMBERS FROM 8/22
+Party: 2 adults + 2 kids.
+Flights: $6,541 cheap Turkish (~30h / 9.5h Istanbul) · $8,247 better Turkish.
+Hotels: $787–$2,057.
+All-in about $8k–$10k.
+Sale windows: Nov 12–22, Dec 18–29, Jan 15–24. A Dec 18 departure lands Dec 20 and misses the first two sale days.
+Reply: “ping Giselle 2” or “book 2” or “kill 2”.</div>
       </div>
 
       <div class="card you" data-id="3" id="n3">
         <div class="who">Needs you · pantry intake</div>
         <div class="num">3</div>
         <div class="title">60-second intake for the next 3 weeks</div>
-        <div class="one">You asked me to reverse-engineer it. I asked 5 questions. I never built it.</div>
-        <div class="sample">SAMPLE FLOW
-Window: snap license + grab phone + one income question. Under a minute. I fill the rest from the photo after the line.
-Still need: does Oasis have to be done before they get food? First-timers only or also return visits? Phone or laptop camera? No-ID people served?
+        <div class="one">License photo + phone + income question. I asked 5 questions. Never built it.</div>
+        <div class="sample">STILL NEED
+1. Oasis visit logged before they get food, or snap now / finish later?
+2. First-timers only, or also existing cases?
+3. Income = monthly $, household size, or both?
+4. Phone camera vs laptop?
+5. No license, only a phone — served that day?
 Reply: “build 3” plus those answers.</div>
       </div>
 
+      <div class="card you" data-id="4" id="n4">
+        <div class="who">Needs you · eBay yesmulti</div>
+        <div class="num">4</div>
+        <div class="title">Bose Acoustimass #158102168757</div>
+        <div class="one">eBay hid it (Australia product-safety recall). Store Ops said end, do not relist. Waiting on you since 8/24.</div>
+        <div class="sample">SAMPLE
+End listing 158102168757. Do not relist.
+Reply: “end 4” or “keep 4”.</div>
+      </div>
 
+      <div class="card you" data-id="5" id="n5">
+        <div class="who">Needs you · eBay yesmulti</div>
+        <div class="num">5</div>
+        <div class="title">johnwa-93 LyteQuest ship to England</div>
+        <div class="one">Buyer asked about shipping the light to the UK. Held for you since 8/24. No reply sent.</div>
+        <div class="sample">Reply: “ship 5” or “no 5” and I route Store Ops.</div>
+      </div>
+
+      <div class="card you" data-id="6" id="n6">
+        <div class="who">Needs you · health</div>
+        <div class="num">6</div>
+        <div class="title">Redo bloodwork</div>
+        <div class="one">Apr 30 Labcorp: A1c 5.9, trigs 218, HDL 20, vit D 27.1, testosterone 261. You started working out and said you would redo the labs. No appointment on the board.</div>
+        <div class="sample">Reply: “book 6” and I have Life Desk set the draw. Mention workouts + ask about fasting / holding vitamins.</div>
+      </div>
     </section>
 
     <section>
       <h2>I'm on it</h2>
 
-      <div class="card me" data-id="1" id="n1">
-        <div class="who">I'm on it · pantry</div>
-        <div class="num">1</div>
-        <div class="title">9 AM time-change text — Sat Sep 5</div>
-        <div class="one">Locked. Send Saturday Sep 5 at 9:00 AM. Sundays at 9 are Sep 6, 13, 20. 1,185 phones. Preview 305-590-7213 first.</div>
-        <div class="sample">LOCKED (not sent yet)
-Queridos hermanos, por las próximas 3 semanas las inscripciones comienzan a las 9:00 AM. Te esperamos el domingo. Puedes invitar a otros. Dirección: 1751 NW 36 ST Bendiciones!
-
-Sat Sep 5 9:00 AM. Finish the 107 import before then.</div>
-      </div>
-      <div class="card me" data-id="4" id="n4">
-        <div class="who">I'm on it · CSFP</div>
-        <div class="num">4</div>
-        <div class="title">Activate waitlist 19</div>
-        <div class="one">You said they were screened. Activating in Oasis. Not waiting on Emily.</div>
-        <div class="sample">Status → Active on the 19 boxed waitlist cases. Pacin C946914 and Medina C507495 included. No FSF email.</div>
-      </div>
-      <div class="card me" data-id="6" id="n6">
-        <div class="who">I'm on it</div>
-        <div class="num">6</div>
-        <div class="title">Import 107 missing 120-day phones</div>
-        <div class="one">So Saturday’s 9 AM blast can reach 1,185. No texts until Sat Sep 5.</div>
-        <div class="sample">In progress. Import into Vivery Location 6270. No SMS.</div>
-      </div>
-
       <div class="card me" data-id="7" id="n7">
-        <div class="who">I'm on it</div>
+        <div class="who">I'm on it · pantry</div>
         <div class="num">7</div>
+        <div class="title">9 AM time-change text — Sat Sep 5</div>
+        <div class="one">Locked. Sundays at 9 AM are Sep 6, 13, 20. 1,185 phones. Preview 305-590-7213 first. Nothing tonight.</div>
+        <div class="sample">Queridos hermanos, por las próximas 3 semanas las inscripciones comienzan a las 9:00 AM. Te esperamos el domingo. Puedes invitar a otros. Dirección: 1751 NW 36 ST Bendiciones!</div>
+      </div>
+
+      <div class="card me" data-id="8" id="n8">
+        <div class="who">I'm on it · pantry</div>
+        <div class="num">8</div>
+        <div class="title">Import 107 missing 120-day phones</div>
+        <div class="one">So Saturday’s blast can reach 1,185. No SMS until Sat Sep 5.</div>
+        <div class="sample">Vivery Location 6270. Import only. No texts.</div>
+      </div>
+
+      <div class="card me" data-id="9" id="n9">
+        <div class="who">I'm on it · CSFP</div>
+        <div class="num">9</div>
+        <div class="title">Activate waitlist 19</div>
+        <div class="one">You said they were screened. Activating in Oasis. Includes Pacin C946914 and Medina C507495.</div>
+        <div class="sample">Status → Active. No FSF email. No Emily wait.</div>
+      </div>
+
+      <div class="card me" data-id="10" id="n10">
+        <div class="who">I'm on it · paper</div>
+        <div class="num">10</div>
         <div class="title">Kronos $500 paper week</div>
         <div class="one">Through Thu Sep 3. Live at paper-desk. CPU, not Mac GPU.</div>
         <div class="sample">Sun mark: Kronos LONG $507.95 · momentum LONG $488.78.
 https://aquino-gif.github.io/paper-desk/#winning</div>
       </div>
 
+      <div class="card me" data-id="11" id="n11">
+        <div class="who">I'm on it · shops</div>
+        <div class="num">11</div>
+        <div class="title">Tengo hoy — Monday PN export</div>
+        <div class="one">Week-1 kill test: export live identified PNs from the four stores, print sell sheet, walk 5 Dade independents. Peter on +1 645-200-1672. Do not buy the cage.</div>
+        <div class="sample">Monday Sep 1. Sell already-PN stock. Flyer: aged-oem/sell-one-pager.md</div>
+      </div>
+
+      <div class="card me" data-id="12" id="n12">
+        <div class="who">I'm on it · Bethany</div>
+        <div class="num">12</div>
+        <div class="title">Tue Sep 1 leftover senior boxes</div>
+        <div class="one">City visit at Miami Bethany. Leftover CSFP/senior boxes, not a new FSF truck. Regular September CSFP delivery is Sep 10. Emily was told 8/22.</div>
+        <div class="sample">Do not treat Sep 1 as a new FSF delivery. Regular CSFP is Sep 10.</div>
+      </div>
     </section>
   </div>
 
-  <p class="hint">Click a card, then tell me the number in this chat. Done items come off the same day. I check live before a card stays in Needs you.</p>
+  <p class="hint">Off the board because they are already done or already decided: snappart $162 refund, Credit One paid, CSFP 182 date-rolls, Sat Aug 29 Vivery blast, 33 new intakes imported, Meal Connect 8/28 13/13, Onkyo kmuppa (held, do not send), Karina (do not email). If I missed a live thread, say the name and it goes on.</p>
 
 <script>
-
 const CODE='Pedro@2008!';
 function unlocked(){ return sessionStorage.getItem('chief-board')==='Pedro@2008!'; }
 function go(e){
