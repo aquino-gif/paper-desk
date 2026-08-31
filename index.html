@@ -63,6 +63,18 @@
   body.winning .all-only { display:none; }
   body.winning #menuTableWrap.lose-table { display:none; }
 
+  .bitrow { display:flex; gap:4px; flex-wrap:wrap; margin:4px 0 10px; align-items:center; }
+  .bitlab { width:92px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; font-weight:650; }
+  .bit { width:26px; height:26px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center;
+    font-weight:750; font-variant-numeric:tabular-nums; border:1px solid var(--line); font-size:13px; }
+  .bit.p { color:var(--long); background:#10241c; }
+  .bit.m { color:var(--short); background:#2a1a14; }
+  table.bits24 { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
+  table.bits24 th { text-align:left; color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.06em; padding:6px 4px; border-bottom:1px solid var(--line); }
+  table.bits24 td { padding:5px 4px; border-bottom:1px solid #1a2330; font-variant-numeric:tabular-nums; }
+  table.bits24 td.num, table.bits24 th.num { text-align:right; }
+  .tokscroll { max-height:220px; overflow:auto; margin-top:6px; }
+
 </style>
 </head>
 <body>
@@ -77,7 +89,6 @@
   <div class="tabs" role="tablist">
     <button type="button" class="tab" id="tabAll" onclick="setTab('all')">All</button>
     <button type="button" class="tab on" id="tabWinning" onclick="setTab('winning')">Winning</button>
-    <a class="tab" href="pending.html" style="text-decoration:none">Pending board</a>
   </div>
 
   <div class="price">$<span id="btc">—</span> <small>BTC-USDT · <span id="tickage">waiting</span></small></div>
@@ -108,6 +119,63 @@
 
   <div class="tiny all-only" id="firstRunMini" style="margin:-6px 0 14px">first run: mini SHORT at 80264.80 · pred 79571.58 · left as receipt, not this official book</div>
   <div class="tiny" style="margin:-10px 0 16px">Official book is Kronos-base on CPU (torch 2.13.0+cpu, cuda=false, no GPU). Play money only.</div>
+
+  <h2>K-line tokens (same 168 BTC hours)</h2>
+  <div class="card" id="tokenCard">
+    <div class="name">Last completed candle · tokenizer only · not a new trade</div>
+    <div class="meta" style="margin-top:10px">
+      <div>Hour open <b>Sun 8:00 AM ET</b> <span style="color:var(--muted)">2026-08-30 12:00 UTC</span></div>
+      <div>OHLC <b>78165.99 / 78850.81 / 78165.99 / 78785.06</b></div>
+      <div>Token width <b>k=20</b> bits of +1/&minus;1 (s1_bits 10 + s2_bits 10)</div>
+      <div>d_model <b>256</b> = hidden size, not the token</div>
+      <div>s1 / pre index <b>339</b></div>
+      <div>s2 / post index <b>866</b></div>
+    </div>
+    <div class="bitrow" style="margin-top:12px"><span class="bitlab">s1 / pre</span>
+      <span class="bit p">+</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit m">&minus;</span>
+    </div>
+    <div class="bitrow"><span class="bitlab">s2 / post</span>
+      <span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit m">&minus;</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit p">+</span>
+    </div>
+    <div class="honest" style="margin-top:8px">
+      Two quotes, not one equation. Paper never writes s1 or s2.<br/>
+      Paper (arXiv 2508.02739): &ldquo;the first subtoken consistently represents coarse-grained information.&rdquo; Fine subtoken encodes residual information for high-fidelity reconstruction &mdash; not noise.<br/>
+      Code comment (<code>split_token</code>): s2_bits = &ldquo;Number of low bits used for the fine token (s2).&rdquo;<br/>
+      Rows are <code>encode(x, half=True)</code>: s1/pre = quantized[:,:,:10], s2/post = quantized[:,:,10:]. Token is k=20 bits of +1/&minus;1. d_model=256 is hidden size.
+    </div>
+    <div class="tiny">Same 168 completed BTCUSDT 1h bars as the $500 Kronos-base book. Tokenizer NeoQuasar/Kronos-Tokenizer-base on CPU. This is <b>not a new trade</b>. Play money only. Equities stay $507.95 vs $488.78 at the official mark.</div>
+    <div class="tokscroll">
+      <table class="bits24">
+        <thead><tr><th>Time UTC</th><th class="num">Close</th><th class="num">s1 idx</th><th class="num">s2 idx</th></tr></thead>
+        <tbody>
+          <tr><td>2026-08-29 13:00</td><td class="num">77,704.32</td><td class="num">943</td><td class="num">269</td></tr>
+          <tr><td>2026-08-29 14:00</td><td class="num">78,014.37</td><td class="num">907</td><td class="num">462</td></tr>
+          <tr><td>2026-08-29 15:00</td><td class="num">77,865.36</td><td class="num">943</td><td class="num">271</td></tr>
+          <tr><td>2026-08-29 16:00</td><td class="num">78,027.17</td><td class="num">939</td><td class="num">462</td></tr>
+          <tr><td>2026-08-29 17:00</td><td class="num">78,100.00</td><td class="num">943</td><td class="num">460</td></tr>
+          <tr><td>2026-08-29 18:00</td><td class="num">78,158.01</td><td class="num">939</td><td class="num">460</td></tr>
+          <tr><td>2026-08-29 19:00</td><td class="num">78,182.00</td><td class="num">939</td><td class="num">460</td></tr>
+          <tr><td>2026-08-29 20:00</td><td class="num">78,129.92</td><td class="num">943</td><td class="num">460</td></tr>
+          <tr><td>2026-08-29 21:00</td><td class="num">78,161.63</td><td class="num">943</td><td class="num">460</td></tr>
+          <tr><td>2026-08-29 22:00</td><td class="num">78,228.34</td><td class="num">939</td><td class="num">462</td></tr>
+          <tr><td>2026-08-29 23:00</td><td class="num">78,230.00</td><td class="num">939</td><td class="num">462</td></tr>
+          <tr><td>2026-08-30 00:00</td><td class="num">78,179.86</td><td class="num">943</td><td class="num">460</td></tr>
+          <tr><td>2026-08-30 01:00</td><td class="num">78,081.50</td><td class="num">943</td><td class="num">271</td></tr>
+          <tr><td>2026-08-30 02:00</td><td class="num">78,106.01</td><td class="num">943</td><td class="num">460</td></tr>
+          <tr><td>2026-08-30 03:00</td><td class="num">78,144.68</td><td class="num">939</td><td class="num">462</td></tr>
+          <tr><td>2026-08-30 04:00</td><td class="num">78,109.75</td><td class="num">943</td><td class="num">460</td></tr>
+          <tr><td>2026-08-30 05:00</td><td class="num">78,127.71</td><td class="num">943</td><td class="num">460</td></tr>
+          <tr><td>2026-08-30 06:00</td><td class="num">78,280.34</td><td class="num">939</td><td class="num">460</td></tr>
+          <tr><td>2026-08-30 07:00</td><td class="num">78,118.00</td><td class="num">943</td><td class="num">460</td></tr>
+          <tr><td>2026-08-30 08:00</td><td class="num">78,074.01</td><td class="num">943</td><td class="num">269</td></tr>
+          <tr><td>2026-08-30 09:00</td><td class="num">78,000.01</td><td class="num">943</td><td class="num">269</td></tr>
+          <tr><td>2026-08-30 10:00</td><td class="num">78,145.29</td><td class="num">943</td><td class="num">460</td></tr>
+          <tr><td>2026-08-30 11:00</td><td class="num">78,166.00</td><td class="num">939</td><td class="num">460</td></tr>
+          <tr><td>2026-08-30 12:00</td><td class="num">78,785.06</td><td class="num">339</td><td class="num">866</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
   <h2>RH menu · $500 Kronos vs $500 buy-the-menu</h2>
   <div class="sleeves">
