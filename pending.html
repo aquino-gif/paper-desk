@@ -159,12 +159,12 @@ https://aquino-gif.github.io/paper-desk/#winning</div>
 
 <script>
 
-const CODE='bethany9';
-function unlocked(){ return sessionStorage.getItem('chief-board')==='1'; }
+const CODE='Pedro@2008!';
+function unlocked(){ return sessionStorage.getItem('chief-board')==='Pedro@2008!'; }
 function go(e){
   e.preventDefault();
   const v=document.getElementById('pw').value.trim();
-  if(v===CODE){ sessionStorage.setItem('chief-board','1'); document.getElementById('lock').classList.add('ok'); return false; }
+  if(v===CODE){ sessionStorage.setItem('chief-board','Pedro@2008!'); document.getElementById('lock').classList.add('ok'); return false; }
   document.getElementById('err').style.display='block';
   return false;
 }
