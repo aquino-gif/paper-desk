@@ -69,6 +69,9 @@
     font-weight:750; font-variant-numeric:tabular-nums; border:1px solid var(--line); font-size:13px; }
   .bit.p { color:var(--long); background:#10241c; }
   .bit.m { color:var(--short); background:#2a1a14; }
+
+  .side.FLAT { color:var(--muted); }
+  .chip.FLAT { color:var(--text); background:#1a2736; }
   table.bits24 { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
   table.bits24 th { text-align:left; color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.06em; padding:6px 4px; border-bottom:1px solid var(--line); }
   table.bits24 td { padding:5px 4px; border-bottom:1px solid #1a2330; font-variant-numeric:tabular-nums; }
@@ -120,22 +123,48 @@
   <div class="tiny all-only" id="firstRunMini" style="margin:-6px 0 14px">first run: mini SHORT at 80264.80 · pred 79571.58 · left as receipt, not this official book</div>
   <div class="tiny" style="margin:-10px 0 16px">Official book is Kronos-base on CPU (torch 2.13.0+cpu, cuda=false, no GPU). Play money only.</div>
 
+
+  <h2>desk-rules (play overlay · not the official $500 book)</h2>
+  <div class="card" id="deskRulesCard">
+    <div class="name">desk-rules · TSMOM + inverse-vol + Kronos agreement · play money</div>
+    <div id="drSide" class="side FLAT">FLAT</div>
+    <div class="eq">$<span id="drEq">500.00</span></div>
+    <div class="pnl" id="drPnl">notional $0 · no real trade</div>
+    <div class="meta" style="margin-top:10px">
+      <div>168h TSMOM <b>SHORT −1.4690%</b></div>
+      <div>24h TSMOM (log only) <b>LONG +0.2628%</b></div>
+      <div>Daily sigma <b>1.6628%</b> (hourly sample stdev × √24)</div>
+      <div>Vol-target notional <b>$500.00</b> (cap; uncapped $601.39)</div>
+      <div>Kronos-base call <b>LONG</b></div>
+      <div>Agree with 168h TSMOM? <b>NO → FLAT</b></div>
+      <div>Applied notional <b>$0.00</b></div>
+      <div>Equity (500 − 5 bps) <b>$500.00</b> (fee $0)</div>
+      <div>CUDA <b>false</b> · CPU only · Kronos not rerun</div>
+      <div>Citations <b>Moskowitz/Ooi/Pedersen 2012 AQR · inverse-vol</b></div>
+    </div>
+    <div class="honest" style="margin-top:10px">
+      Overlay only. Official BTC books stay Kronos-base <b>LONG $498.56</b> vs momentum <b>LONG $479.40</b>.
+      168h first-close 79235.99 → last-close 78071.99. 24h close-to-close does not override.
+      Lookback file <code>data/btcusdt_hourly_lookback_base.csv</code> (last 168 completed hours ending 2026-09-01T13:00:00+00:00). Play money. No broker.
+    </div>
+  </div>
+
   <h2>K-line tokens (same 168 BTC hours)</h2>
   <div class="card" id="tokenCard">
     <div class="name">Last completed candle · tokenizer only · not a new trade</div>
     <div class="meta" style="margin-top:10px">
-      <div>Hour open <b>Sun 8:00 AM ET</b> <span style="color:var(--muted)">2026-08-30 12:00 UTC</span></div>
-      <div>OHLC <b>78165.99 / 78850.81 / 78165.99 / 78785.06</b></div>
+      <div>Hour open <b>Tue 9:00 AM ET</b> <span style="color:var(--muted)">2026-09-01 13:00 UTC</span></div>
+      <div>OHLC <b>78004.01 / 78202.00 / 77510.00 / 78071.99</b></div>
       <div>Token width <b>k=20</b> bits of +1/&minus;1 (s1_bits 10 + s2_bits 10)</div>
       <div>d_model <b>256</b> = hidden size, not the token</div>
-      <div>s1 / pre index <b>339</b></div>
-      <div>s2 / post index <b>866</b></div>
+      <div>s1 / pre index <b>601</b></div>
+      <div>s2 / post index <b>643</b></div>
     </div>
     <div class="bitrow" style="margin-top:12px"><span class="bitlab">s1 / pre</span>
-      <span class="bit p">+</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit m">&minus;</span>
+      <span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit m">&minus;</span><span class="bit p">+</span>
     </div>
     <div class="bitrow"><span class="bitlab">s2 / post</span>
-      <span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit m">&minus;</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit p">+</span>
+      <span class="bit p">+</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit m">&minus;</span><span class="bit m">&minus;</span><span class="bit m">&minus;</span><span class="bit m">&minus;</span><span class="bit p">+</span><span class="bit m">&minus;</span><span class="bit p">+</span>
     </div>
     <div class="honest" style="margin-top:8px">
       Two quotes, not one equation. Paper never writes s1 or s2.<br/>
@@ -143,35 +172,80 @@
       Code comment (<code>split_token</code>): s2_bits = &ldquo;Number of low bits used for the fine token (s2).&rdquo;<br/>
       Rows are <code>encode(x, half=True)</code>: s1/pre = quantized[:,:,:10], s2/post = quantized[:,:,10:]. Token is k=20 bits of +1/&minus;1. d_model=256 is hidden size.
     </div>
-    <div class="tiny">Same 168 completed BTCUSDT 1h bars as the $500 Kronos-base book. Tokenizer NeoQuasar/Kronos-Tokenizer-base on CPU. This is <b>not a new trade</b>. Play money only. Equities stay $501.22 vs $482.06 at the official mark.</div>
+    <div class="tiny">Same 168 completed BTCUSDT 1h bars as the Tue 10:13 AM ET official Kronos-base book (last completed hour open 2026-09-01T13:00:00+00:00). Tokenizer NeoQuasar/Kronos-Tokenizer-base on CPU (torch 2.13.0+cpu, cuda=false, no GPU). This is <b>not a new trade</b>. Play money only. BOOK equities stay $498.56 vs $479.40 LONG / LONG.</div>
     <div class="tokscroll">
       <table class="bits24">
         <thead><tr><th>Time UTC</th><th class="num">Close</th><th class="num">s1 idx</th><th class="num">s2 idx</th></tr></thead>
         <tbody>
-          <tr><td>2026-08-29 13:00</td><td class="num">77,704.32</td><td class="num">943</td><td class="num">269</td></tr>
-          <tr><td>2026-08-29 14:00</td><td class="num">78,014.37</td><td class="num">907</td><td class="num">462</td></tr>
-          <tr><td>2026-08-29 15:00</td><td class="num">77,865.36</td><td class="num">943</td><td class="num">271</td></tr>
-          <tr><td>2026-08-29 16:00</td><td class="num">78,027.17</td><td class="num">939</td><td class="num">462</td></tr>
-          <tr><td>2026-08-29 17:00</td><td class="num">78,100.00</td><td class="num">943</td><td class="num">460</td></tr>
-          <tr><td>2026-08-29 18:00</td><td class="num">78,158.01</td><td class="num">939</td><td class="num">460</td></tr>
-          <tr><td>2026-08-29 19:00</td><td class="num">78,182.00</td><td class="num">939</td><td class="num">460</td></tr>
-          <tr><td>2026-08-29 20:00</td><td class="num">78,129.92</td><td class="num">943</td><td class="num">460</td></tr>
-          <tr><td>2026-08-29 21:00</td><td class="num">78,161.63</td><td class="num">943</td><td class="num">460</td></tr>
-          <tr><td>2026-08-29 22:00</td><td class="num">78,228.34</td><td class="num">939</td><td class="num">462</td></tr>
-          <tr><td>2026-08-29 23:00</td><td class="num">78,230.00</td><td class="num">939</td><td class="num">462</td></tr>
-          <tr><td>2026-08-30 00:00</td><td class="num">78,179.86</td><td class="num">943</td><td class="num">460</td></tr>
-          <tr><td>2026-08-30 01:00</td><td class="num">78,081.50</td><td class="num">943</td><td class="num">271</td></tr>
-          <tr><td>2026-08-30 02:00</td><td class="num">78,106.01</td><td class="num">943</td><td class="num">460</td></tr>
-          <tr><td>2026-08-30 03:00</td><td class="num">78,144.68</td><td class="num">939</td><td class="num">462</td></tr>
-          <tr><td>2026-08-30 04:00</td><td class="num">78,109.75</td><td class="num">943</td><td class="num">460</td></tr>
-          <tr><td>2026-08-30 05:00</td><td class="num">78,127.71</td><td class="num">943</td><td class="num">460</td></tr>
-          <tr><td>2026-08-30 06:00</td><td class="num">78,280.34</td><td class="num">939</td><td class="num">460</td></tr>
-          <tr><td>2026-08-30 07:00</td><td class="num">78,118.00</td><td class="num">943</td><td class="num">460</td></tr>
-          <tr><td>2026-08-30 08:00</td><td class="num">78,074.01</td><td class="num">943</td><td class="num">269</td></tr>
-          <tr><td>2026-08-30 09:00</td><td class="num">78,000.01</td><td class="num">943</td><td class="num">269</td></tr>
-          <tr><td>2026-08-30 10:00</td><td class="num">78,145.29</td><td class="num">943</td><td class="num">460</td></tr>
-          <tr><td>2026-08-30 11:00</td><td class="num">78,166.00</td><td class="num">939</td><td class="num">460</td></tr>
-          <tr><td>2026-08-30 12:00</td><td class="num">78,785.06</td><td class="num">339</td><td class="num">866</td></tr>
+          <tr><td>2026-08-31 14:00</td><td class="num">78,600.14</td><td class="num">81</td><td class="num">547</td></tr>
+          <tr><td>2026-08-31 15:00</td><td class="num">78,580.42</td><td class="num">209</td><td class="num">739</td></tr>
+          <tr><td>2026-08-31 16:00</td><td class="num">78,639.57</td><td class="num">395</td><td class="num">994</td></tr>
+          <tr><td>2026-08-31 17:00</td><td class="num">78,897.36</td><td class="num">323</td><td class="num">994</td></tr>
+          <tr><td>2026-08-31 18:00</td><td class="num">79,016.00</td><td class="num">291</td><td class="num">994</td></tr>
+          <tr><td>2026-08-31 19:00</td><td class="num">78,898.06</td><td class="num">387</td><td class="num">994</td></tr>
+          <tr><td>2026-08-31 20:00</td><td class="num">78,864.72</td><td class="num">427</td><td class="num">994</td></tr>
+          <tr><td>2026-08-31 21:00</td><td class="num">78,964.32</td><td class="num">419</td><td class="num">994</td></tr>
+          <tr><td>2026-08-31 22:00</td><td class="num">78,593.15</td><td class="num">911</td><td class="num">972</td></tr>
+          <tr><td>2026-08-31 23:00</td><td class="num">78,581.29</td><td class="num">911</td><td class="num">462</td></tr>
+          <tr><td>2026-09-01 00:00</td><td class="num">78,652.00</td><td class="num">451</td><td class="num">994</td></tr>
+          <tr><td>2026-09-01 01:00</td><td class="num">78,410.62</td><td class="num">975</td><td class="num">462</td></tr>
+          <tr><td>2026-09-01 02:00</td><td class="num">78,449.99</td><td class="num">975</td><td class="num">462</td></tr>
+          <tr><td>2026-09-01 03:00</td><td class="num">78,679.01</td><td class="num">323</td><td class="num">994</td></tr>
+          <tr><td>2026-09-01 04:00</td><td class="num">78,727.11</td><td class="num">387</td><td class="num">994</td></tr>
+          <tr><td>2026-09-01 05:00</td><td class="num">79,179.99</td><td class="num">258</td><td class="num">866</td></tr>
+          <tr><td>2026-09-01 06:00</td><td class="num">78,745.39</td><td class="num">411</td><td class="num">962</td></tr>
+          <tr><td>2026-09-01 07:00</td><td class="num">78,632.37</td><td class="num">911</td><td class="num">462</td></tr>
+          <tr><td>2026-09-01 08:00</td><td class="num">77,883.28</td><td class="num">725</td><td class="num">541</td></tr>
+          <tr><td>2026-09-01 09:00</td><td class="num">77,915.00</td><td class="num">725</td><td class="num">543</td></tr>
+          <tr><td>2026-09-01 10:00</td><td class="num">78,029.67</td><td class="num">911</td><td class="num">271</td></tr>
+          <tr><td>2026-09-01 11:00</td><td class="num">78,098.97</td><td class="num">911</td><td class="num">271</td></tr>
+          <tr><td>2026-09-01 12:00</td><td class="num">78,004.00</td><td class="num">973</td><td class="num">29</td></tr>
+          <tr><td>2026-09-01 13:00</td><td class="num">78,071.99</td><td class="num">601</td><td class="num">643</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h2>24h predicted path (this morning&rsquo;s official lookback)</h2>
+  <div class="card" id="predPathCard">
+    <div class="name">last_pred_ohlcv_base.csv · not a new trade · play money</div>
+    <div class="meta" style="margin-top:10px">
+      <div>First hour pred close <b>77,787.00</b> <span style="color:var(--muted)">2026-09-01 14:00 UTC / 10:00 AM ET</span></div>
+      <div>Last hour pred close <b>79,780.92</b> <span style="color:var(--muted)">2026-09-02 13:00 UTC / 9:00 AM ET</span></div>
+      <div>Min pred close <b>77,787.00</b> (first hour)</div>
+      <div>Max pred close <b>79,842.91</b> (2026-09-02 12:00 UTC)</div>
+      <div>Hour-to-hour <b>16 up / 7 down</b> &mdash; mostly up</div>
+      <div>Device <b>CPU torch 2.13.0+cpu, cuda=false</b></div>
+    </div>
+    <div class="tiny">This is the same 24-hour predicted OHLCV that marked the official book target 79,780.92 (LONG). Tokenizer bits above are from the same 168-hour input. Equities and sides in BOOK are not changed. Play money. CPU gap named.</div>
+    <div class="tokscroll">
+      <table class="bits24">
+        <thead><tr><th>Pred hour UTC</th><th class="num">Pred close</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr><td>2026-09-01 14:00</td><td class="num">77,787.00</td><td>first</td></tr>
+          <tr><td>2026-09-01 15:00</td><td class="num">77,820.39</td><td></td></tr>
+          <tr><td>2026-09-01 16:00</td><td class="num">78,458.31</td><td></td></tr>
+          <tr><td>2026-09-01 17:00</td><td class="num">78,575.35</td><td></td></tr>
+          <tr><td>2026-09-01 18:00</td><td class="num">78,489.73</td><td></td></tr>
+          <tr><td>2026-09-01 19:00</td><td class="num">78,773.34</td><td></td></tr>
+          <tr><td>2026-09-01 20:00</td><td class="num">79,057.48</td><td></td></tr>
+          <tr><td>2026-09-01 21:00</td><td class="num">79,069.41</td><td></td></tr>
+          <tr><td>2026-09-01 22:00</td><td class="num">79,006.80</td><td></td></tr>
+          <tr><td>2026-09-01 23:00</td><td class="num">78,990.19</td><td></td></tr>
+          <tr><td>2026-09-02 00:00</td><td class="num">78,852.24</td><td></td></tr>
+          <tr><td>2026-09-02 01:00</td><td class="num">79,171.98</td><td></td></tr>
+          <tr><td>2026-09-02 02:00</td><td class="num">79,281.11</td><td></td></tr>
+          <tr><td>2026-09-02 03:00</td><td class="num">79,166.84</td><td></td></tr>
+          <tr><td>2026-09-02 04:00</td><td class="num">79,224.96</td><td></td></tr>
+          <tr><td>2026-09-02 05:00</td><td class="num">79,547.11</td><td></td></tr>
+          <tr><td>2026-09-02 06:00</td><td class="num">79,637.41</td><td></td></tr>
+          <tr><td>2026-09-02 07:00</td><td class="num">79,745.82</td><td></td></tr>
+          <tr><td>2026-09-02 08:00</td><td class="num">79,770.61</td><td></td></tr>
+          <tr><td>2026-09-02 09:00</td><td class="num">79,835.50</td><td></td></tr>
+          <tr><td>2026-09-02 10:00</td><td class="num">79,727.13</td><td></td></tr>
+          <tr><td>2026-09-02 11:00</td><td class="num">79,834.20</td><td></td></tr>
+          <tr><td>2026-09-02 12:00</td><td class="num">79,842.91</td><td>max</td></tr>
+          <tr><td>2026-09-02 13:00</td><td class="num">79,780.92</td><td>last / book target</td></tr>
         </tbody>
       </table>
     </div>
