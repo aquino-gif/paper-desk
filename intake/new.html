@@ -426,11 +426,21 @@ async function pdf417Loop(video){
       c.height=Math.round(bandH*1.5);
       c.getContext('2d').drawImage(video, 0, sy, vw, bandH, 0, 0, c.width, c.height);
       try{
-        const r=zxingReader.decodeFromCanvas(c);
-        if(r && scanActive){
-          const text=r.getText?r.getText():String(r.text||'');
-          if(text) onPdf417(text);
+        let text='';
+        try{
+          const r=zxingReader.decodeFromCanvas(c);
+          text=r.getText?r.getText():String(r.text||'');
+        }catch(_){
+          try{
+            const lum=new ZXing.HTMLCanvasElementLuminanceSource(c);
+            const bin=new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+            const mr=new ZXing.MultiFormatReader();
+            mr.setHints(buildPdf417Hints());
+            const r=mr.decode(bin);
+            text=r.getText?r.getText():String(r.text||'');
+          }catch(_2){}
         }
+        if(text && scanActive) onPdf417(text);
       }catch(_){}
     }
   }catch(_){}
@@ -486,7 +496,16 @@ async function tryDecodeFile(file){
     try{
       const r=reader.decodeFromCanvas(c);
       text=r.getText?r.getText():String(r.text||'');
-    }catch(_){}
+    }catch(_){
+      try{
+        const lum=new ZXing.HTMLCanvasElementLuminanceSource(c);
+        const bin=new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+        const mr=new ZXing.MultiFormatReader();
+        mr.setHints(buildPdf417Hints());
+        const r=mr.decode(bin);
+        text=r.getText?r.getText():String(r.text||'');
+      }catch(_2){}
+    }
     URL.revokeObjectURL(url);
     if(text){
       const parsed=parseAamva(text);
