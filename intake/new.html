@@ -9,9 +9,13 @@
   * { box-sizing: border-box; }
   body { margin:0; font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif; color:var(--ink); background:#f7f7f7; }
   .wrap { max-width:430px; margin:0 auto; min-height:100vh; background:#fff; display:flex; flex-direction:column; }
-  header { padding:14px 16px 8px; display:flex; justify-content:space-between; align-items:center; }
+  header { padding:14px 16px 8px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
   .badge { background:var(--o2); color:var(--o); font-weight:700; font-size:12px; padding:6px 10px; border-radius:999px; letter-spacing:.04em; }
   .staff { font-size:12px; color:var(--muted); }
+  .hdr-right { display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+  .bak-link { font-size:12px; font-weight:700; color:var(--o); text-decoration:none; }
+  .bak-link:hover { text-decoration:underline; }
+  .qcount { font-size:11px; color:var(--muted); }
   main { flex:1; padding:0 16px 24px; }
   h1 { font-size:22px; margin:8px 0 4px; }
   .sub { color:var(--muted); font-size:14px; margin:0 0 12px; line-height:1.4; }
@@ -21,6 +25,18 @@
   .btn.ghost { background:#eee; color:#333; }
   .btn.warn { background:#fff; color:var(--warn); border:2px solid var(--warn); }
   .btn + .btn { margin-top:10px; }
+  .hold-wrap { margin-top:12px; user-select:none; -webkit-user-select:none; touch-action:none; }
+  .hold-btn {
+    position:relative; overflow:hidden; display:block; width:100%; border:0; border-radius:12px;
+    padding:16px; font-size:16px; font-weight:700; cursor:pointer; background:#f5d5b8; color:#8a3a00;
+  }
+  .hold-btn.greenish { background:#c8e6d3; color:#0d5c2e; }
+  .hold-btn .fill { position:absolute; left:0; top:0; bottom:0; width:0%; background:var(--o); z-index:0; }
+  .hold-btn.greenish .fill { background:var(--g); }
+  .hold-btn .label { position:relative; z-index:1; }
+  .hold-btn.done { color:#fff; }
+  .hold-btn.done .fill { width:100% !important; }
+  .hold-hint { font-size:12px; color:var(--muted); text-align:center; margin:8px 0 0; }
   label { display:block; font-size:13px; font-weight:600; margin:10px 0 4px; }
   input, select, textarea {
     width:100%; font-size:16px; padding:12px; border:1px solid #ccc; border-radius:10px;
@@ -32,6 +48,9 @@
   .photo img { width:100%; height:100%; object-fit:cover; }
   .name { text-align:center; font-size:20px; font-weight:800; margin:0 0 6px; }
   .meta { text-align:center; font-size:14px; line-height:1.45; }
+  .review-row { display:flex; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid #eee; font-size:14px; }
+  .review-row span:first-child { color:var(--muted); }
+  .review-row span:last-child { font-weight:600; text-align:right; }
   .alert { background:#fff0f0; border:1px solid #f5c6c6; color:#7a1f1f; border-radius:12px; padding:12px; margin:12px 0; font-size:14px; }
   .ok { text-align:center; padding:20px 8px; }
   .check { width:72px; height:72px; border-radius:50%; background:var(--g2); color:var(--g); display:flex; align-items:center; justify-content:center; font-size:36px; margin:0 auto 12px; }
@@ -54,12 +73,17 @@
     <input id="pass" type="password" placeholder="Passcode">
     <button class="btn primary" id="gateGo">Open app</button>
     <p class="err hidden" id="gateErr">Wrong passcode</p>
+    <p class="qcount hidden" id="gateQueueHint"></p>
   </div>
 
   <div id="app" class="hidden">
     <header>
       <span class="badge">NEW INTAKE</span>
-      <span class="staff" id="staffLabel">Miami Bethany</span>
+      <div class="hdr-right">
+        <span class="staff" id="staffLabel">Miami Bethany</span>
+        <a class="bak-link" href="backup.html">Backup / queue</a>
+        <span class="qcount" id="queueCount"></span>
+      </div>
     </header>
     <main>
       <section id="screen-capture">
@@ -95,9 +119,29 @@
           <p class="name" id="dupName">—</p>
           <div class="meta">Case <b id="dupCase">—</b><br><span id="dupDob"></span><br><span id="dupPhone"></span></div>
         </div>
-        <button class="btn green" id="useExisting">Use existing case (Returning)</button>
+        <div class="hold-wrap">
+          <button type="button" class="hold-btn greenish" id="useExisting" aria-label="Hold to use existing case">
+            <span class="fill" id="useFill"></span>
+            <span class="label" id="useLabel">Hold to use existing case</span>
+          </button>
+          <p class="hold-hint">Press and hold ~2.5s. Release early to cancel.</p>
+        </div>
         <button class="btn warn" id="forceNew">Not the same person — continue new</button>
         <button class="btn ghost" id="dupBack">Back</button>
+      </section>
+
+      <section id="screen-review" class="hidden">
+        <h1>Review &amp; create</h1>
+        <p class="sub">Check fields, then hold to queue the new intake and print ID.</p>
+        <div class="card" id="reviewCard"></div>
+        <div class="hold-wrap">
+          <button type="button" class="hold-btn" id="confirmNew" aria-label="Hold to create and print">
+            <span class="fill" id="confirmFill"></span>
+            <span class="label" id="confirmLabel">Hold to create &amp; print</span>
+          </button>
+          <p class="hold-hint">Press and hold ~2.5s. Release early to cancel.</p>
+        </div>
+        <button class="btn ghost" id="reviewBack">Back</button>
       </section>
 
       <section id="screen-done" class="hidden">
@@ -113,21 +157,66 @@
           <div class="bar"></div>
           <div class="code" id="idBar">00000000</div>
         </div>
-        <p class="sub" style="text-align:center">Wi-Fi Rollo prints this card for <b>new</b> intakes only. Barcode = Code 128C of 8-digit padded case id.</p>
+        <p class="sub" style="text-align:center">Wi-Fi Rollo prints this card for <b>new</b> intakes only. Barcode = Code 128C of 8-digit padded case id. Backup downloaded.</p>
         <button class="btn primary" id="again">Next new intake</button>
-        <a class="btn ghost" href="app.html" style="text-align:center;text-decoration:none;margin-top:10px">Go to Returning</a>
+        <a class="btn ghost" href="backup.html" style="text-align:center;text-decoration:none;margin-top:10px;display:block">Backup / queue</a>
+        <a class="btn ghost" href="app.html" style="text-align:center;text-decoration:none;margin-top:10px;display:block">Go to Returning</a>
       </section>
     </main>
   </div>
 </div>
 <script>
 const PASS='Pedro@2008!';
+const QUEUE_KEY='mb-pantry-queue';
+const BACKUP_KEY='mb-pantry-backup';
+const HOLD_MS=2500;
 let cases=[]; let pending=null; let dupHit=null; let faceData=null;
+let holdTimer=null, holdStart=0, holdRaf=null, holdDone=false, holdKind=null;
+
 const $=id=>document.getElementById(id);
-const show=id=>{['screen-capture','screen-dup','screen-done'].forEach(s=>$(s).classList.add('hidden')); $(id).classList.remove('hidden');};
+const show=id=>{
+  ['screen-capture','screen-dup','screen-review','screen-done'].forEach(s=>$(s).classList.add('hidden'));
+  $(id).classList.remove('hidden');
+  if(id==='screen-review'||id==='screen-dup') resetHold();
+};
 const digits=p=>(p||'').replace(/\D/g,'').replace(/^1(\d{10})$/,'$1');
 const fmtPhone=p=>{const d=digits(p); return d.length===10?`(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`:(p||'');};
 const norm=s=>(s||'').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu,'').replace(/[^a-z0-9]/g,'');
+
+function queueLen(){ try{ return JSON.parse(localStorage.getItem(QUEUE_KEY)||'[]').length; }catch(_){ return 0; } }
+function refreshQueueCount(){
+  const n=queueLen();
+  const el=$('queueCount');
+  if(el) el.textContent=n?(n+' visit'+(n===1?'':'s')+' saved'):'';
+  const g=$('gateQueueHint');
+  if(g){
+    if(n>0){ g.textContent=n+' visit'+(n===1?'':'s')+' saved on this device'; g.classList.remove('hidden'); }
+    else g.classList.add('hidden');
+  }
+}
+
+function stampName(caseNo, at){
+  const d=at?new Date(at):new Date();
+  const pad=x=>String(x).padStart(2,'0');
+  const c=String(caseNo||'unknown').replace(/[^A-Za-z0-9]/g,'')||'unknown';
+  return 'pantry-visit-'+c+'-'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'-'+pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds())+'.json';
+}
+function downloadVisit(row){
+  const blob=new Blob([JSON.stringify(row,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=stampName(row.case,row.at);
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1500);
+}
+function persistVisit(row){
+  const q=JSON.parse(localStorage.getItem(QUEUE_KEY)||'[]');
+  q.push(row); localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  const b=JSON.parse(localStorage.getItem(BACKUP_KEY)||'[]');
+  b.push(row); localStorage.setItem(BACKUP_KEY, JSON.stringify(b));
+  downloadVisit(row);
+  refreshQueueCount();
+}
 
 function findDupes(form){
   const phone=digits(form.phone);
@@ -149,7 +238,6 @@ function barcodeFromCase(caseNo){
   return m? m[1].padStart(8,'0').slice(-8) : '00000000';
 }
 function fakeNewCase(){
-  // Local queue token until Oasis assigns real C####### after the line
   const n = String(Date.now()).slice(-7);
   return 'C'+n;
 }
@@ -176,11 +264,112 @@ function validate(f){
   return '';
 }
 
-function queuePush(row){
-  const key='mb-pantry-queue';
-  const q=JSON.parse(localStorage.getItem(key)||'[]');
-  q.push(row);
-  localStorage.setItem(key, JSON.stringify(q));
+function openReview(f){
+  pending=f;
+  const card=$('reviewCard');
+  const rows=[
+    ['Name', f.first+' '+f.last],
+    ['Phone', fmtPhone(f.phone)],
+    ['DOB', f.dob],
+    ['Household', f.hh],
+    ['Address', [f.street,f.city,'FL',f.zip].filter(Boolean).join(', ')||'—'],
+    ['Income OK', f.income==='yes'?'Yes':'No'],
+    ['Face photo', f.face?'Attached':'None']
+  ];
+  card.innerHTML=rows.map(([k,v])=>'<div class="review-row"><span>'+k+'</span><span>'+v+'</span></div>').join('');
+  show('screen-review');
+}
+
+function finishNew(f){
+  const caseNo=fakeNewCase();
+  const bar=barcodeFromCase(caseNo);
+  const row={
+    at:new Date().toISOString(), mode:'new', case:caseNo, barcode:bar,
+    name:f.first+' '+f.last, phone:digits(f.phone), dob:f.dob, hh:f.hh,
+    address:[f.street,f.city,'FL',f.zip].filter(Boolean).join(', '),
+    income:f.income, amount:1, unit:'Boxes/Bags',
+    category:'Food Assistance: Pantry Visit', print:true, face: !!f.face
+  };
+  persistVisit(row);
+  $('doneTitle').textContent='New intake queued';
+  $('doneSub').innerHTML='Pantry Visit <b>1</b> Boxes/Bags · Rollo prints ID<br>'+f.first+' '+f.last+' · Backup downloaded';
+  $('idCase').textContent=caseNo;
+  $('idName').textContent=f.first+' '+f.last;
+  $('idBar').textContent=bar+' (Code 128C)';
+  document.getElementById('idCard').style.opacity='1';
+  show('screen-done');
+}
+
+function finishExisting(){
+  const row={
+    at:new Date().toISOString(), mode:'returning-from-new',
+    case:dupHit.case, name:dupHit.name, phone:dupHit.phone,
+    amount:1, unit:'Boxes/Bags', category:'Food Assistance: Pantry Visit', print:false
+  };
+  persistVisit(row);
+  $('doneTitle').textContent='Existing case — pantry visit';
+  $('doneSub').innerHTML='Used <b>'+dupHit.case+'</b> · No print<br>Send them through Returning next time · Backup downloaded';
+  $('idCase').textContent=dupHit.case;
+  $('idName').textContent=dupHit.name||'';
+  $('idBar').textContent=barcodeFromCase(dupHit.case)+' (existing)';
+  document.getElementById('idCard').style.opacity='0.45';
+  show('screen-done');
+}
+
+function resetHold(){
+  holdDone=false; holdKind=null;
+  if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; }
+  if(holdRaf){ cancelAnimationFrame(holdRaf); holdRaf=null; }
+  [['confirmNew','confirmFill','confirmLabel','Hold to create & print'],
+   ['useExisting','useFill','useLabel','Hold to use existing case']].forEach(([id,fid,lid,txt])=>{
+    const btn=$(id); if(!btn) return;
+    btn.classList.remove('holding','done');
+    const fill=$(fid); if(fill) fill.style.width='0%';
+    const lab=$(lid); if(lab) lab.textContent=txt;
+  });
+}
+
+function holdTick(fillId){
+  if(!holdStart||holdDone) return;
+  const pct=Math.min(100, ((Date.now()-holdStart)/HOLD_MS)*100);
+  const fill=$(fillId);
+  if(fill) fill.style.width=pct+'%';
+  if(pct<100) holdRaf=requestAnimationFrame(()=>holdTick(fillId));
+}
+
+function makeHold(btnId, fillId, labelId, kind, onComplete){
+  const btn=$(btnId);
+  const opts={passive:false};
+  function start(ev){
+    if(ev) ev.preventDefault();
+    if(holdDone) return;
+    if(kind==='new' && !pending) return;
+    if(kind==='existing' && !dupHit) return;
+    holdKind=kind;
+    holdStart=Date.now();
+    btn.classList.add('holding');
+    $(labelId).textContent='Keep holding…';
+    holdTick(fillId);
+    holdTimer=setTimeout(()=>{
+      holdDone=true;
+      if(holdRaf) cancelAnimationFrame(holdRaf);
+      const fill=$(fillId); if(fill) fill.style.width='100%';
+      btn.classList.add('done');
+      $(labelId).textContent='Confirmed';
+      setTimeout(onComplete, 180);
+    }, HOLD_MS);
+  }
+  function cancel(ev){
+    if(ev) ev.preventDefault();
+    if(holdDone) return;
+    if(holdKind!==kind && holdKind!==null) return;
+    resetHold();
+  }
+  btn.addEventListener('pointerdown', start, opts);
+  btn.addEventListener('pointerup', cancel, opts);
+  btn.addEventListener('pointerleave', cancel, opts);
+  btn.addEventListener('pointercancel', cancel, opts);
+  btn.addEventListener('contextmenu', e=>e.preventDefault());
 }
 
 $('gateGo').onclick=async()=>{
@@ -191,8 +380,10 @@ $('gateGo').onclick=async()=>{
     cases=data.cases||[];
     $('staffLabel').textContent=data.count+' cases for dup check';
   }catch(e){ $('staffLabel').textContent='Dup check offline'; }
+  refreshQueueCount();
   show('screen-capture');
 };
+refreshQueueCount();
 
 $('dlFile').onchange=e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;
@@ -222,52 +413,29 @@ $('checkDup').onclick=()=>{
     $('dupPhoto').textContent='PHOTO';
     show('screen-dup');
   } else {
-    finishNew(f);
+    openReview(f);
   }
 };
 
-function finishNew(f){
-  const caseNo=fakeNewCase();
-  const bar=barcodeFromCase(caseNo);
-  queuePush({
-    at:new Date().toISOString(), mode:'new', case:caseNo, barcode:bar,
-    name:f.first+' '+f.last, phone:digits(f.phone), dob:f.dob, hh:f.hh,
-    address:[f.street,f.city,'FL',f.zip].filter(Boolean).join(', '),
-    income:f.income, amount:1, unit:'Boxes/Bags',
-    category:'Food Assistance: Pantry Visit', print:true, face: !!f.face
-  });
-  $('doneTitle').textContent='New intake queued';
-  $('doneSub').innerHTML='Pantry Visit <b>1</b> Boxes/Bags · Rollo prints ID<br>'+f.first+' '+f.last;
-  $('idCase').textContent=caseNo;
-  $('idName').textContent=f.first+' '+f.last;
-  $('idBar').textContent=bar+' (Code 128C)';
-  show('screen-done');
-}
-
-$('useExisting').onclick=()=>{
-  // Treat as returning — no print
-  queuePush({
-    at:new Date().toISOString(), mode:'returning-from-new',
-    case:dupHit.case, name:dupHit.name, phone:dupHit.phone,
-    amount:1, unit:'Boxes/Bags', category:'Food Assistance: Pantry Visit', print:false
-  });
-  $('doneTitle').textContent='Existing case — pantry visit';
-  $('doneSub').innerHTML='Used <b>'+dupHit.case+'</b> · No print<br>Send them through Returning next time';
-  $('idCase').textContent=dupHit.case;
-  $('idName').textContent=dupHit.name||'';
-  $('idBar').textContent=barcodeFromCase(dupHit.case)+' (existing)';
-  document.getElementById('idCard').style.opacity='0.45';
-  show('screen-done');
+$('forceNew').onclick=()=>{ if(pending) openReview(pending); };
+$('dupBack').onclick=()=>{ resetHold(); show('screen-capture'); };
+$('reviewBack').onclick=()=>{
+  resetHold();
+  if(dupHit) show('screen-dup');
+  else show('screen-capture');
 };
 
-$('forceNew').onclick=()=>{ if(pending) finishNew(pending); };
-$('dupBack').onclick=()=>show('screen-capture');
+makeHold('confirmNew','confirmFill','confirmLabel','new', ()=>{ if(pending) finishNew(pending); });
+makeHold('useExisting','useFill','useLabel','existing', ()=>{ if(dupHit) finishExisting(); });
+
 $('again').onclick=()=>{
   pending=null; dupHit=null; faceData=null;
+  resetHold();
   ['first','last','phone','street','zip'].forEach(id=>$(id).value='');
   $('dob').value=''; $('hh').value='1'; $('city').value='Miami';
   $('dlPreview').style.display='none'; $('dlFile').value=''; $('faceFile').value='';
   document.getElementById('idCard').style.opacity='1';
+  refreshQueueCount();
   show('screen-capture');
 };
 </script>
