@@ -26,7 +26,7 @@
     background:#000;
   }
   .scan-guide {
-    pointer-events:none; position:absolute; left:4%; right:4%; top:38%; height:72px;
+    pointer-events:none; position:absolute; left:4%; right:4%; top:36%; height:28%;
     border:2px solid rgba(26,159,75,.95); border-radius:8px; z-index:2;
     box-shadow:0 0 0 9999px rgba(0,0,0,.35);
   }
@@ -68,6 +68,7 @@
   .list button.match { text-align:left; width:100%; background:#fff; border:1px solid #ddd; border-radius:12px; padding:12px; margin:8px 0; cursor:pointer; }
   .gate { padding:40px 16px; }
   .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
+  .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:10px; }
 </style>
 </head>
 <body>
@@ -93,25 +94,27 @@
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Camera or USB/Bluetooth scanner. Point at the Oasis card. Hard refresh ?v=20260903d if camera was stuck.</p>
+        <p class="sub">Point the green strip at the Oasis Code-128. Hard refresh ?v=20260903e if camera was stuck.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline muted autoplay></video>
           <div class="scan-guide" id="scanGuide"></div>
         </div>
+        <canvas id="scanCanvas" class="hidden" aria-hidden="true"></canvas>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260903d — Allow camera. Hold Oasis Code-128 flat in the green strip (ZXing).</p>
-        <div class="row2">
-          <button class="btn secondary" id="retryCam">Retry camera</button>
-          <button class="btn secondary" id="toManual">Type case #</button>
+        <p class="hint" id="scanHint">v20260903e — Allow camera. Hold Oasis Code-128 flat in the green strip (crop+contrast ZXing).</p>
+        <div class="row3">
+          <button class="btn secondary" id="retryCam">Retry</button>
+          <button class="btn secondary" id="torchBtn" disabled>Torch</button>
+          <button class="btn secondary" id="toManual">Type #</button>
         </div>
         <button class="btn secondary" id="toPhone" style="margin-top:10px">Search by phone</button>
-        <p class="hint">No card? Search by phone or type the case number</p>
+        <p class="hint">Emergency only: type case # or search phone. Sunday plan = scan.</p>
       </section>
 
       <section id="screen-manual" class="hidden">
         <h1>Type case #</h1>
-        <p class="sub">Example: C378814 or 00378814</p>
+        <p class="sub">Emergency backup only. Example: C378814 or 00378814</p>
         <input id="caseInput" type="text" inputmode="text" placeholder="C378814" autocomplete="off" autocapitalize="characters">
         <button class="btn primary" id="caseSearch">Look up</button>
         <button class="btn ghost" id="caseBack">Back to scan</button>
@@ -168,9 +171,13 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
+const VER = 'v20260903e';
 let cases = [];
 let mediaStream = null;
-let zxingReader = null;
+let videoTrack = null;
+let torchOn = false;
+let zxingReader128 = null;
+let zxingReaderMulti = null;
 let zxingLoopTimer = null;
 let nativeRaf = null;
 let nativeDetector = null;
@@ -184,6 +191,10 @@ let holdRaf = null;
 let holdDone = false;
 let lastDecodeAt = 0;
 let scanActive = false;
+let decodeCanvas = null;
+let decodeCtx = null;
+let boostCanvas = null;
+let boostCtx = null;
 
 const $ = (id) => document.getElementById(id);
 const show = (id) => {
@@ -337,7 +348,7 @@ function findByPhone(p) {
 function onDecoded(decoded) {
   if (!scanActive) return;
   const now = Date.now();
-  if (now - lastDecodeAt < 400) return;
+  if (now - lastDecodeAt < 350) return;
   lastDecodeAt = now;
   const hit = findByBarcode(decoded);
   if (hit) {
@@ -359,19 +370,8 @@ function focusWedge() {
   try { w.focus({ preventScroll: true }); } catch (_) { w.focus(); }
 }
 
-function buildZxingHints() {
+function buildHints(formats) {
   const hints = new Map();
-  const formats = [
-    ZXing.BarcodeFormat.CODE_128,
-    ZXing.BarcodeFormat.CODE_39,
-    ZXing.BarcodeFormat.EAN_13,
-    ZXing.BarcodeFormat.EAN_8,
-    ZXing.BarcodeFormat.UPC_A,
-    ZXing.BarcodeFormat.UPC_E,
-    ZXing.BarcodeFormat.ITF,
-    ZXing.BarcodeFormat.CODABAR,
-    ZXing.BarcodeFormat.QR_CODE
-  ];
   hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
   hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
   if (ZXing.DecodeHintType.ALSO_INVERTED != null) {
@@ -380,11 +380,144 @@ function buildZxingHints() {
   return hints;
 }
 
+function ensureCanvases() {
+  if (!decodeCanvas) {
+    decodeCanvas = $('scanCanvas') || document.createElement('canvas');
+    decodeCtx = decodeCanvas.getContext('2d', { willReadFrequently: true });
+  }
+  if (!boostCanvas) {
+    boostCanvas = document.createElement('canvas');
+    boostCtx = boostCanvas.getContext('2d', { willReadFrequently: true });
+  }
+}
+
+/** Draw video crop of center ~28% height strip, full width, upscaled 2x. */
+function drawStrip(video, upscale) {
+  ensureCanvases();
+  const vw = video.videoWidth || 0;
+  const vh = video.videoHeight || 0;
+  if (vw < 8 || vh < 8) return null;
+  const bandH = Math.max(24, Math.round(vh * 0.28));
+  const sy = Math.max(0, Math.round((vh - bandH) / 2));
+  const scale = upscale || 2;
+  const dw = Math.round(vw * scale);
+  const dh = Math.round(bandH * scale);
+  decodeCanvas.width = dw;
+  decodeCanvas.height = dh;
+  decodeCtx.imageSmoothingEnabled = false;
+  decodeCtx.drawImage(video, 0, sy, vw, bandH, 0, 0, dw, dh);
+  return decodeCanvas;
+}
+
+function drawFull(video, maxW) {
+  ensureCanvases();
+  const vw = video.videoWidth || 0;
+  const vh = video.videoHeight || 0;
+  if (vw < 8 || vh < 8) return null;
+  const scale = Math.min(1, (maxW || 1280) / vw);
+  const dw = Math.round(vw * scale);
+  const dh = Math.round(vh * scale);
+  decodeCanvas.width = dw;
+  decodeCanvas.height = dh;
+  decodeCtx.imageSmoothingEnabled = true;
+  decodeCtx.drawImage(video, 0, 0, vw, vh, 0, 0, dw, dh);
+  return decodeCanvas;
+}
+
+/** Contrast boost: multiply around mid + soft threshold for thin bars. */
+function contrastBoost(srcCanvas) {
+  ensureCanvases();
+  const w = srcCanvas.width;
+  const h = srcCanvas.height;
+  boostCanvas.width = w;
+  boostCanvas.height = h;
+  boostCtx.drawImage(srcCanvas, 0, 0);
+  const img = boostCtx.getImageData(0, 0, w, h);
+  const d = img.data;
+  const contrast = 1.85;
+  const mid = 128;
+  for (let i = 0; i < d.length; i += 4) {
+    let y = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+    y = (y - mid) * contrast + mid;
+    if (y < 90) y = 0;
+    else if (y > 165) y = 255;
+    y = y < 0 ? 0 : (y > 255 ? 255 : y);
+    d[i] = d[i+1] = d[i+2] = y;
+  }
+  boostCtx.putImageData(img, 0, 0);
+  return boostCanvas;
+}
+
+function tryDecodeCanvas(reader, canvas) {
+  if (!reader || !canvas) return null;
+  try {
+    if (reader.decodeFromCanvas) {
+      return reader.decodeFromCanvas(canvas);
+    }
+  } catch (_) {}
+  try {
+    const lum = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+    const bin = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+    return reader.decodeBitmap ? reader.decodeBitmap(bin) : (zxingReader128 && zxingReader128.decode ? null : null);
+  } catch (_) {}
+  try {
+    const lum = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+    const bin = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+    const multi = new ZXing.MultiFormatReader();
+    // reuse reader's hints via decodeWithState if available
+    return multi.decode(bin);
+  } catch (_) {}
+  return null;
+}
+
+function textFromResult(result) {
+  if (!result) return '';
+  if (result.getText) return result.getText();
+  return String(result.text || '');
+}
+
+function decodePass(reader, canvas) {
+  if (!reader || !canvas) return '';
+  // Raw strip
+  let r = null;
+  try { r = reader.decodeFromCanvas(canvas); } catch (_) { r = null; }
+  if (r) return textFromResult(r);
+  // Contrast-boosted
+  try {
+    const boosted = contrastBoost(canvas);
+    r = reader.decodeFromCanvas(boosted);
+    if (r) return textFromResult(r);
+  } catch (_) {}
+  // Luminance buffer path
+  try {
+    const lum = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+    const bin = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+    const reader2 = new ZXing.MultiFormatReader();
+    reader2.setHints(buildHints([ZXing.BarcodeFormat.CODE_128]));
+    r = reader2.decode(bin);
+    if (r) return textFromResult(r);
+  } catch (_) {}
+  try {
+    const boosted = contrastBoost(canvas);
+    const lum = new ZXing.HTMLCanvasElementLuminanceSource(boosted);
+    const bin = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+    const reader2 = new ZXing.MultiFormatReader();
+    reader2.setHints(buildHints([ZXing.BarcodeFormat.CODE_128]));
+    r = reader2.decode(bin);
+    if (r) return textFromResult(r);
+  } catch (_) {}
+  return '';
+}
+
 function stopMediaTracks() {
   if (mediaStream) {
     try { mediaStream.getTracks().forEach(t => t.stop()); } catch (_) {}
     mediaStream = null;
   }
+  videoTrack = null;
+  torchOn = false;
+  const tb = $('torchBtn');
+  if (tb) { tb.disabled = true; tb.textContent = 'Torch'; }
   const video = $('scanVideo');
   if (video) {
     try { video.pause(); } catch (_) {}
@@ -403,10 +536,13 @@ function stopScan() {
     nativeRaf = null;
   }
   nativeDetector = null;
-  if (zxingReader) {
-    try { zxingReader.reset(); } catch (_) {}
-    try { if (zxingReader.stopContinuousDecode) zxingReader.stopContinuousDecode(); } catch (_) {}
-    zxingReader = null;
+  if (zxingReader128) {
+    try { zxingReader128.reset(); } catch (_) {}
+    zxingReader128 = null;
+  }
+  if (zxingReaderMulti) {
+    try { zxingReaderMulti.reset(); } catch (_) {}
+    zxingReaderMulti = null;
   }
   stopMediaTracks();
   if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
@@ -414,27 +550,46 @@ function stopScan() {
 }
 
 async function zxingDecodeLoop(video) {
-  if (!scanActive || !zxingReader) return;
+  if (!scanActive) return;
   try {
-    if (video.readyState >= 2) {
-      const result = await zxingReader.decodeOnceFromVideoElement(video);
-      if (result && scanActive) {
-        const text = result.getText ? result.getText() : String(result.text || '');
-        if (text) onDecoded(text);
+    if (video.readyState >= 2 && video.videoWidth > 0) {
+      // 1) Primary: green-strip crop @ 2x, CODE_128 only
+      const strip = drawStrip(video, 2);
+      let text = '';
+      if (strip && zxingReader128) {
+        text = decodePass(zxingReader128, strip);
       }
+      // 2) Same strip with multi-format fallback
+      if (!text && strip && zxingReaderMulti) {
+        text = decodePass(zxingReaderMulti, strip);
+      }
+      // 3) Full-frame secondary (CODE_128 then multi)
+      if (!text) {
+        const full = drawFull(video, 1280);
+        if (full && zxingReader128) text = decodePass(zxingReader128, full);
+        if (!text && full && zxingReaderMulti) text = decodePass(zxingReaderMulti, full);
+      }
+      // 4) Also try library video-element path as last resort
+      if (!text && zxingReader128) {
+        try {
+          const result = await zxingReader128.decodeOnceFromVideoElement(video);
+          text = textFromResult(result);
+        } catch (_) {}
+      }
+      if (text && scanActive) onDecoded(text);
     }
   } catch (_) {
-    /* NotFoundException etc — keep looping */
+    /* keep looping */
   }
   if (scanActive) {
-    zxingLoopTimer = setTimeout(() => zxingDecodeLoop(video), 80);
+    zxingLoopTimer = setTimeout(() => zxingDecodeLoop(video), 60);
   }
 }
 
 function startNativeLoop(video) {
   if (typeof window.BarcodeDetector === 'undefined') return;
   try {
-    nativeDetector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code'] });
+    nativeDetector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e'] });
   } catch (_) {
     try { nativeDetector = new BarcodeDetector(); } catch (e2) { return; }
   }
@@ -442,7 +597,15 @@ function startNativeLoop(video) {
     if (!scanActive || !nativeDetector) return;
     try {
       if (video.readyState >= 2) {
-        const codes = await nativeDetector.detect(video);
+        // Prefer crop via canvas ImageBitmap if possible
+        const strip = drawStrip(video, 2);
+        let codes = [];
+        if (strip) {
+          try { codes = await nativeDetector.detect(strip); } catch (_) { codes = []; }
+        }
+        if ((!codes || !codes.length) && video.readyState >= 2) {
+          try { codes = await nativeDetector.detect(video); } catch (_) { codes = []; }
+        }
         if (codes && codes.length && scanActive) {
           const raw = codes[0].rawValue || '';
           if (raw) onDecoded(raw);
@@ -452,6 +615,29 @@ function startNativeLoop(video) {
     if (scanActive) nativeRaf = requestAnimationFrame(tick);
   };
   nativeRaf = requestAnimationFrame(tick);
+}
+
+async function setupTorchButton() {
+  const tb = $('torchBtn');
+  if (!tb) return;
+  tb.disabled = true;
+  tb.textContent = 'Torch';
+  torchOn = false;
+  if (!videoTrack) return;
+  const caps = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+  if (!caps || !caps.torch) return;
+  tb.disabled = false;
+  tb.onclick = async () => {
+    if (!videoTrack) return;
+    try {
+      torchOn = !torchOn;
+      await videoTrack.applyConstraints({ advanced: [{ torch: torchOn }] });
+      tb.textContent = torchOn ? 'Torch ON' : 'Torch';
+    } catch (_) {
+      torchOn = false;
+      tb.textContent = 'Torch';
+    }
+  };
 }
 
 async function startScan() {
@@ -479,22 +665,36 @@ async function startScan() {
         height: { ideal: 1080 }
       }
     });
+    videoTrack = mediaStream.getVideoTracks()[0] || null;
     video.srcObject = mediaStream;
     video.setAttribute('playsinline', 'true');
     video.muted = true;
     await video.play();
+    await setupTorchButton();
 
-    zxingReader = new ZXing.BrowserMultiFormatReader(buildZxingHints());
+    const fmt128 = [ZXing.BarcodeFormat.CODE_128];
+    const fmtMulti = [
+      ZXing.BarcodeFormat.CODE_128,
+      ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.EAN_13,
+      ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A,
+      ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.ITF,
+      ZXing.BarcodeFormat.CODABAR
+    ];
+    zxingReader128 = new ZXing.BrowserMultiFormatReader(buildHints(fmt128));
+    zxingReaderMulti = new ZXing.BrowserMultiFormatReader(buildHints(fmtMulti));
     zxingDecodeLoop(video);
 
     const hasNative = typeof window.BarcodeDetector !== 'undefined';
     if (hasNative) startNativeLoop(video);
 
-    const eng = hasNative ? 'ZXing+BarcodeDetector' : 'ZXing';
-    $('scanHint').textContent = 'v20260903d — Camera live (' + eng + '). Hold Oasis Code-128 flat in the green strip.';
+    const eng = hasNative ? 'strip+contrast ZXing+BD' : 'strip+contrast ZXing';
+    $('scanHint').textContent = VER + ' — Camera live (' + eng + '). Hold Code-128 in the green strip.';
   } catch (e) {
     const msg = (e && (e.message || e.name || String(e))) || 'unknown';
-    $('scanErr').textContent = 'Camera: ' + msg + '. Tap Retry camera, or use Type case # / phone. HTTPS + Allow Camera required.';
+    $('scanErr').textContent = 'Camera: ' + msg + '. Tap Retry, or emergency Type # / phone. HTTPS + Allow Camera required.';
     $('scanErr').classList.remove('hidden');
     stopScan();
   } finally {
