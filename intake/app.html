@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Returning — Miami Bethany</title>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
   :root { --g:#1a9f4b; --g2:#e8f7ee; --ink:#111; --muted:#666; --warn:#c0392b; }
@@ -21,10 +20,10 @@
   main { flex:1; padding:0 16px 24px; }
   h1 { font-size:22px; margin:8px 0 4px; }
   .sub { color:var(--muted); font-size:14px; margin:0 0 12px; }
-  .scan-wrap { position:relative; width:100%; border-radius:14px; overflow:hidden; background:#000; min-height:260px; }
-  #reader { width:100%; min-height:260px; background:#000; }
-  #reader video, .scan-wrap video {
-    width:100% !important; height:auto !important; min-height:260px; object-fit:cover; display:block;
+  .cam-wrap { position:relative; width:100%; border-radius:14px; overflow:hidden; background:#000; min-height:260px; }
+  #scanVideo {
+    width:100%; height:auto; min-height:260px; object-fit:cover; display:block;
+    background:#000;
   }
   .scan-guide {
     pointer-events:none; position:absolute; left:4%; right:4%; top:38%; height:72px;
@@ -96,12 +95,12 @@
         <h1>Scan Oasis Barcode</h1>
         <p class="sub">Camera or USB/Bluetooth scanner. Point at the Oasis card. Hard refresh ?v=20260903d if camera was stuck.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
-        <div class="scan-wrap" id="scanWrap">
-          <div id="reader"></div>
+        <div class="cam-wrap" id="camWrap">
+          <video id="scanVideo" playsinline muted autoplay></video>
           <div class="scan-guide" id="scanGuide"></div>
         </div>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">Allow camera when asked. Hold card flat — barcode in the green strip.</p>
+        <p class="hint" id="scanHint">v20260903d — Allow camera. Hold Oasis Code-128 flat in the green strip (ZXing).</p>
         <div class="row2">
           <button class="btn secondary" id="retryCam">Retry camera</button>
           <button class="btn secondary" id="toManual">Type case #</button>
@@ -170,21 +169,21 @@ const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
 let cases = [];
-let scanner = null;
 let mediaStream = null;
 let zxingReader = null;
-let zxingControls = null;
+let zxingLoopTimer = null;
 let nativeRaf = null;
-let scanMode = null; // 'native' | 'zxing' | 'html5'
+let nativeDetector = null;
+let scanning = false;
 let current = null;
 let lastBad = '';
 let lastBadAt = 0;
-let scanning = false;
 let holdTimer = null;
 let holdStart = 0;
 let holdRaf = null;
 let holdDone = false;
 let lastDecodeAt = 0;
+let scanActive = false;
 
 const $ = (id) => document.getElementById(id);
 const show = (id) => {
@@ -336,6 +335,7 @@ function findByPhone(p) {
 }
 
 function onDecoded(decoded) {
+  if (!scanActive) return;
   const now = Date.now();
   if (now - lastDecodeAt < 400) return;
   lastDecodeAt = now;
@@ -359,29 +359,19 @@ function focusWedge() {
   try { w.focus({ preventScroll: true }); } catch (_) { w.focus(); }
 }
 
-function clearReader() {
-  const r = $('reader');
-  if (r) r.innerHTML = '';
-}
-
-function stopMediaTracks() {
-  if (mediaStream) {
-    try { mediaStream.getTracks().forEach(t => t.stop()); } catch (_) {}
-    mediaStream = null;
-  }
-}
-
-function nativeSupported() {
-  return typeof window.BarcodeDetector !== 'undefined';
-}
-
-function zxingSupported() {
-  return typeof ZXing !== 'undefined' && ZXing.BrowserMultiFormatReader;
-}
-
 function buildZxingHints() {
   const hints = new Map();
-  const formats = [ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39];
+  const formats = [
+    ZXing.BarcodeFormat.CODE_128,
+    ZXing.BarcodeFormat.CODE_39,
+    ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.UPC_A,
+    ZXing.BarcodeFormat.UPC_E,
+    ZXing.BarcodeFormat.ITF,
+    ZXing.BarcodeFormat.CODABAR,
+    ZXing.BarcodeFormat.QR_CODE
+  ];
   hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
   hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
   if (ZXing.DecodeHintType.ALSO_INVERTED != null) {
@@ -390,188 +380,126 @@ function buildZxingHints() {
   return hints;
 }
 
-async function openCameraVideo() {
-  clearReader();
-  const video = document.createElement('video');
-  video.setAttribute('playsinline', 'true');
-  video.setAttribute('autoplay', 'true');
-  video.muted = true;
-  video.id = 'scan-video';
-  $('reader').appendChild(video);
-  mediaStream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      facingMode: { ideal: 'environment' },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 }
-    }
-  });
-  video.srcObject = mediaStream;
-  await video.play();
-  return video;
-}
-
-function startNativeLoop(video) {
-  const formats = ['code_128', 'code_39', 'code_93', 'codabar', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'qr_code'];
-  let detector;
-  try {
-    detector = new BarcodeDetector({ formats });
-  } catch (_) {
-    detector = new BarcodeDetector();
+function stopMediaTracks() {
+  if (mediaStream) {
+    try { mediaStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+    mediaStream = null;
   }
-  const tick = async () => {
-    if (scanMode !== 'native+zxing' && scanMode !== 'native') return;
-    try {
-      if (video.readyState >= 2) {
-        const codes = await detector.detect(video);
-        if (codes && codes.length) {
-          const raw = codes[0].rawValue || '';
-          if (raw) onDecoded(raw);
-        }
-      }
-    } catch (_) {}
-    nativeRaf = requestAnimationFrame(tick);
-  };
-  nativeRaf = requestAnimationFrame(tick);
-}
-
-async function startZxingOnVideo(video) {
-  zxingReader = new ZXing.BrowserMultiFormatReader(buildZxingHints(), 200);
-  const cb = (result, err) => {
-    if (result) {
-      const text = result.getText ? result.getText() : String(result.text || '');
-      if (text) onDecoded(text);
-    }
-  };
-  if (typeof zxingReader.decodeFromStream === 'function' && mediaStream) {
-    zxingControls = await zxingReader.decodeFromStream(mediaStream, video, cb);
-  } else if (typeof zxingReader.decodeFromVideoElementContinuously === 'function') {
-    zxingReader.decodeFromVideoElementContinuously(video, cb);
-    zxingControls = { stop: () => { try { zxingReader.reset(); } catch (_) {} } };
-  } else {
-    zxingControls = await zxingReader.decodeFromConstraints(
-      {
-        audio: false,
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        }
-      },
-      video,
-      cb
-    );
+  const video = $('scanVideo');
+  if (video) {
+    try { video.pause(); } catch (_) {}
+    try { video.srcObject = null; } catch (_) {}
   }
 }
 
-async function pickCameraId() {
-  try {
-    const cams = await Html5Qrcode.getCameras();
-    if (!cams || !cams.length) return { facingMode: 'environment' };
-    const back = cams.find(c => /back|rear|environment|trás|atras/i.test(c.label||''));
-    return back ? back.id : cams[cams.length - 1].id;
-  } catch (_) {
-    return { facingMode: 'environment' };
+function stopScan() {
+  scanActive = false;
+  if (zxingLoopTimer) {
+    clearTimeout(zxingLoopTimer);
+    zxingLoopTimer = null;
   }
-}
-
-async function startHtml5Scan() {
-  clearReader();
-  if (typeof Html5Qrcode === 'undefined') {
-    throw new Error('html5-qrcode missing');
-  }
-  const formats = [
-    Html5QrcodeSupportedFormats.CODE_128,
-    Html5QrcodeSupportedFormats.CODE_39,
-    Html5QrcodeSupportedFormats.CODE_93,
-    Html5QrcodeSupportedFormats.CODABAR,
-    Html5QrcodeSupportedFormats.EAN_13,
-    Html5QrcodeSupportedFormats.EAN_8,
-    Html5QrcodeSupportedFormats.UPC_A,
-    Html5QrcodeSupportedFormats.UPC_E,
-    Html5QrcodeSupportedFormats.ITF,
-    Html5QrcodeSupportedFormats.QR_CODE
-  ];
-  scanner = new Html5Qrcode('reader', {
-    formatsToSupport: formats,
-    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-    verbose: false
-  });
-  const cam = await pickCameraId();
-  const boxW = Math.min(360, Math.floor(($('reader').clientWidth || 360) * 0.92));
-  await scanner.start(
-    cam,
-    {
-      fps: 15,
-      qrbox: { width: boxW, height: Math.max(88, Math.floor(boxW * 0.28)) },
-      aspectRatio: 1.777,
-      disableFlip: false
-    },
-    onDecoded
-  );
-  scanMode = 'html5';
-  $('scanHint').textContent = 'Camera live. Hold Oasis barcode flat in the green strip (or use a USB scanner).';
-}
-
-async function startScan() {
-  $('scanErr').classList.add('hidden');
-  focusWedge();
-  if (scanning || scanMode) return;
-  scanning = true;
-  try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error('Camera API unavailable (need HTTPS)');
-    }
-    const hasNative = nativeSupported();
-    const hasZxing = zxingSupported();
-    if (hasNative || hasZxing) {
-      try {
-        const video = await openCameraVideo();
-        if (hasNative) startNativeLoop(video);
-        if (hasZxing) {
-          try { await startZxingOnVideo(video); } catch (_) {}
-        }
-        scanMode = (hasNative && hasZxing) ? 'native+zxing' : (hasNative ? 'native' : 'zxing');
-        const eng = scanMode === 'native+zxing' ? 'native+ZXing' : scanMode;
-        $('scanHint').textContent = 'Camera live (' + eng + '). Hold Oasis barcode flat in the green strip.';
-        return;
-      } catch (e) {
-        await stopScan();
-      }
-    }
-    await startHtml5Scan();
-  } catch (e) {
-    const msg = (e && (e.message || e.name || String(e))) || 'unknown';
-    $('scanErr').textContent = 'Camera: ' + msg + '. Tap Retry camera, or use Type case # / phone. HTTPS + Allow Camera required.';
-    $('scanErr').classList.remove('hidden');
-    await stopScan();
-  } finally {
-    scanning = false;
-  }
-}
-
-async function stopScan() {
   if (nativeRaf) {
     cancelAnimationFrame(nativeRaf);
     nativeRaf = null;
   }
-  stopMediaTracks();
-  if (zxingControls && typeof zxingControls.stop === 'function') {
-    try { zxingControls.stop(); } catch (_) {}
-  }
-  zxingControls = null;
+  nativeDetector = null;
   if (zxingReader) {
     try { zxingReader.reset(); } catch (_) {}
     try { if (zxingReader.stopContinuousDecode) zxingReader.stopContinuousDecode(); } catch (_) {}
     zxingReader = null;
   }
-  if (scanner) {
-    try { await scanner.stop(); } catch (_) {}
-    try { scanner.clear(); } catch (_) {}
-    scanner = null;
+  stopMediaTracks();
+  if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+  if (holdRaf) { cancelAnimationFrame(holdRaf); holdRaf = null; }
+}
+
+async function zxingDecodeLoop(video) {
+  if (!scanActive || !zxingReader) return;
+  try {
+    if (video.readyState >= 2) {
+      const result = await zxingReader.decodeOnceFromVideoElement(video);
+      if (result && scanActive) {
+        const text = result.getText ? result.getText() : String(result.text || '');
+        if (text) onDecoded(text);
+      }
+    }
+  } catch (_) {
+    /* NotFoundException etc — keep looping */
   }
-  clearReader();
-  scanMode = null;
+  if (scanActive) {
+    zxingLoopTimer = setTimeout(() => zxingDecodeLoop(video), 80);
+  }
+}
+
+function startNativeLoop(video) {
+  if (typeof window.BarcodeDetector === 'undefined') return;
+  try {
+    nativeDetector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code'] });
+  } catch (_) {
+    try { nativeDetector = new BarcodeDetector(); } catch (e2) { return; }
+  }
+  const tick = async () => {
+    if (!scanActive || !nativeDetector) return;
+    try {
+      if (video.readyState >= 2) {
+        const codes = await nativeDetector.detect(video);
+        if (codes && codes.length && scanActive) {
+          const raw = codes[0].rawValue || '';
+          if (raw) onDecoded(raw);
+        }
+      }
+    } catch (_) {}
+    if (scanActive) nativeRaf = requestAnimationFrame(tick);
+  };
+  nativeRaf = requestAnimationFrame(tick);
+}
+
+async function startScan() {
+  $('scanErr').classList.add('hidden');
+  focusWedge();
+  if (scanning || scanActive) return;
+  scanning = true;
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Camera API unavailable (need HTTPS)');
+    }
+    if (typeof ZXing === 'undefined' || !ZXing.BrowserMultiFormatReader) {
+      throw new Error('ZXing library failed to load');
+    }
+
+    stopScan();
+    scanActive = true;
+
+    const video = $('scanVideo');
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      }
+    });
+    video.srcObject = mediaStream;
+    video.setAttribute('playsinline', 'true');
+    video.muted = true;
+    await video.play();
+
+    zxingReader = new ZXing.BrowserMultiFormatReader(buildZxingHints());
+    zxingDecodeLoop(video);
+
+    const hasNative = typeof window.BarcodeDetector !== 'undefined';
+    if (hasNative) startNativeLoop(video);
+
+    const eng = hasNative ? 'ZXing+BarcodeDetector' : 'ZXing';
+    $('scanHint').textContent = 'v20260903d — Camera live (' + eng + '). Hold Oasis Code-128 flat in the green strip.';
+  } catch (e) {
+    const msg = (e && (e.message || e.name || String(e))) || 'unknown';
+    $('scanErr').textContent = 'Camera: ' + msg + '. Tap Retry camera, or use Type case # / phone. HTTPS + Allow Camera required.';
+    $('scanErr').classList.remove('hidden');
+    stopScan();
+  } finally {
+    scanning = false;
+  }
 }
 
 function openMatch(c) {
@@ -610,15 +538,14 @@ $('gateGo').onclick = async () => {
   startScan();
 };
 
-// Show queue hint even before unlock if items exist
 refreshQueueCount();
 
 $('retryCam').onclick = async () => {
-  await stopScan();
+  stopScan();
   await startScan();
 };
 $('toManual').onclick = async () => {
-  await stopScan();
+  stopScan();
   $('caseErr').classList.add('hidden');
   $('caseInput').value = '';
   show('screen-manual');
@@ -639,7 +566,7 @@ $('caseSearch').onclick = () => {
 };
 
 $('toPhone').onclick = async () => {
-  await stopScan();
+  stopScan();
   $('phoneErr').classList.add('hidden');
   $('phoneList').innerHTML = '';
   $('phoneInput').value = '';
