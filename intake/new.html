@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>New Intake — Miami Bethany</title>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
   :root { --o:#d35400; --o2:#fff4eb; --g:#1a9f4b; --g2:#e8f7ee; --ink:#111; --muted:#666; --warn:#c0392b; }
   * { box-sizing: border-box; }
@@ -62,6 +63,29 @@
   .idcard .code { text-align:center; font-size:12px; font-variant-numeric:tabular-nums; }
   .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .gate { padding:40px 16px; }
+
+  .cam-wrap { position:relative; width:100%; border-radius:14px; overflow:hidden; background:#000; min-height:220px; margin:8px 0 10px; }
+  #idVideo { width:100%; height:auto; min-height:220px; object-fit:cover; display:block; background:#000; }
+  .scan-guide {
+    pointer-events:none; position:absolute; left:6%; right:6%; top:22%; height:56%;
+    border:2px solid rgba(211,84,0,.95); border-radius:8px; z-index:2;
+    box-shadow:0 0 0 9999px rgba(0,0,0,.35);
+  }
+  .hint { font-size:13px; color:var(--muted); text-align:center; margin:8px 0; }
+  .okmsg { color:var(--g); font-size:14px; margin:8px 0; font-weight:600; }
+  .staff-block {
+    margin-top:14px; padding:14px; border:2px solid var(--o); border-radius:14px; background:var(--o2);
+  }
+  .staff-block h2 { font-size:15px; margin:0 0 8px; color:#8a3a00; }
+  .staff-block.need {
+    outline:3px solid #e67e22; box-shadow:0 0 0 6px rgba(230,126,34,.25);
+    animation: pulseNeed 1.2s ease-in-out 3;
+  }
+  @keyframes pulseNeed {
+    0%,100% { box-shadow:0 0 0 6px rgba(230,126,34,.25); }
+    50% { box-shadow:0 0 0 10px rgba(230,126,34,.45); }
+  }
+  .field-need { outline:2px solid #e67e22; border-radius:10px; }
   #dlPreview { width:100%; max-height:180px; object-fit:contain; border-radius:12px; background:#111; display:none; margin-bottom:10px; }
 </style>
 </head>
@@ -88,23 +112,50 @@
     <main>
       <section id="screen-capture">
         <h1>Capture</h1>
-        <p class="sub">Scan / photo the Florida ID, then confirm fields. Duplicate check runs before create.</p>
+        <p class="sub">v20260903e — Scan Florida DL <b>back</b> (PDF417) to fill name/DOB/address. Phone, household, and income are NOT on the ID.</p>
+
+        <button class="btn primary" id="scanFlBtn">Scan Florida ID (back)</button>
+        <button class="btn ghost hidden" id="stopCamBtn">Stop camera</button>
+        <div class="cam-wrap hidden" id="camWrap">
+          <video id="idVideo" playsinline muted autoplay></video>
+          <div class="scan-guide"></div>
+        </div>
+        <p class="hint" id="scanHint">Point at the PDF417 barcode on the back of the FL driver license.</p>
+        <p class="okmsg hidden" id="scanOk"></p>
+        <p class="err hidden" id="scanErr"></p>
+
+        <label>Or photo / file of ID (fallback)</label>
         <input type="file" id="dlFile" accept="image/*" capture="environment">
         <img id="dlPreview" alt="ID preview">
+
         <label>First name</label><input id="first" autocomplete="given-name">
         <label>Last name</label><input id="last" autocomplete="family-name">
-        <label>Phone</label><input id="phone" type="tel" inputmode="numeric" placeholder="786-555-1212">
+        <label>Middle (optional)</label><input id="middle" autocomplete="additional-name">
         <div class="row2">
           <div><label>DOB</label><input id="dob" type="date"></div>
-          <div><label>Household size</label><input id="hh" type="number" min="1" value="1"></div>
+          <div><label>DL number</label><input id="dlnum" autocomplete="off"></div>
         </div>
         <label>Street</label><input id="street">
         <div class="row2">
           <div><label>City</label><input id="city" value="Miami"></div>
-          <div><label>Zip</label><input id="zip"></div>
+          <div><label>State</label><input id="state" value="FL"></div>
         </div>
-        <label>Income at/below guidelines?</label>
-        <select id="income"><option value="yes">Yes</option><option value="no">No</option></select>
+        <label>Zip</label><input id="zip">
+
+        <div class="staff-block" id="staffFields">
+          <h2>Staff must answer — not on ID</h2>
+          <label>Phone (required)</label>
+          <input id="phone" type="tel" inputmode="numeric" placeholder="786-555-1212">
+          <label>Household size</label>
+          <input id="hh" type="number" min="1" value="1">
+          <label>Income at/below guidelines? (required)</label>
+          <select id="income">
+            <option value="" selected disabled>Select…</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </div>
+
         <label>Face photo (for next visit)</label>
         <input type="file" id="faceFile" accept="image/*" capture="user">
         <p class="err hidden" id="capErr"></p>
@@ -160,7 +211,7 @@
         <p class="sub" style="text-align:center">Wi-Fi Rollo prints this card for <b>new</b> intakes only. Barcode = Code 128C of 8-digit padded case id. Backup downloaded.</p>
         <button class="btn primary" id="again">Next new intake</button>
         <a class="btn ghost" href="backup.html" style="text-align:center;text-decoration:none;margin-top:10px;display:block">Backup / queue</a>
-        <a class="btn ghost" href="app.html" style="text-align:center;text-decoration:none;margin-top:10px;display:block">Go to Returning</a>
+        <a class="btn ghost" href="app.html?v=20260903e" style="text-align:center;text-decoration:none;margin-top:10px;display:block">Go to Returning</a>
       </section>
     </main>
   </div>
@@ -172,12 +223,15 @@ const BACKUP_KEY='mb-pantry-backup';
 const HOLD_MS=2500;
 let cases=[]; let pending=null; let dupHit=null; let faceData=null;
 let holdTimer=null, holdStart=0, holdRaf=null, holdDone=false, holdKind=null;
+let mediaStream=null, zxingReader=null, zxingLoopTimer=null, scanActive=false, scanning=false, lastDecodeAt=0;
+const VER='v20260903e';
 
 const $=id=>document.getElementById(id);
 const show=id=>{
   ['screen-capture','screen-dup','screen-review','screen-done'].forEach(s=>$(s).classList.add('hidden'));
   $(id).classList.remove('hidden');
   if(id==='screen-review'||id==='screen-dup') resetHold();
+  if(id!=='screen-capture' && typeof stopIdScan==='function') stopIdScan();
 };
 const digits=p=>(p||'').replace(/\D/g,'').replace(/^1(\d{10})$/,'$1');
 const fmtPhone=p=>{const d=digits(p); return d.length===10?`(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`:(p||'');};
@@ -242,16 +296,223 @@ function fakeNewCase(){
   return 'C'+n;
 }
 
+
+function parseAamvaDob(raw){
+  const s=String(raw||'').replace(/\D/g,'');
+  if(s.length!==8) return '';
+  const y1=parseInt(s.slice(0,4),10);
+  if(y1>=1900 && y1<=2100) return s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
+  return s.slice(4,8)+'-'+s.slice(0,2)+'-'+s.slice(2,4);
+}
+
+function parseAamva(text){
+  const raw=String(text||'');
+  if(!raw) return null;
+  const lines=raw.replace(/\r/g,'\n').split('\n');
+  const map={};
+  const re=/^([A-Z]{3})(.*)$/;
+  for(const line of lines){
+    const m=line.trim().match(re);
+    if(m) map[m[1]]=(m[2]||'').trim();
+  }
+  const codes=['DCS','DAC','DAD','DBB','DAG','DAI','DAJ','DAK','DAQ','DBC'];
+  for(const code of codes){
+    if(map[code]) continue;
+    const idx=raw.indexOf(code);
+    if(idx<0) continue;
+    let rest=raw.slice(idx+3);
+    const stop=rest.search(/\n|[A-Z]{3}/);
+    if(stop>0) rest=rest.slice(0,stop);
+    map[code]=rest.trim();
+  }
+  if(!map.DCS && !map.DAC && !map.DAQ) return null;
+  return {
+    last: map.DCS||'',
+    first: map.DAC||'',
+    middle: map.DAD||'',
+    dob: parseAamvaDob(map.DBB||''),
+    street: map.DAG||'',
+    city: map.DAI||'',
+    state: (map.DAJ||'FL').slice(0,2),
+    zip: (map.DAK||'').replace(/\D/g,'').slice(0,5),
+    dl: map.DAQ||'',
+    sex: map.DBC||''
+  };
+}
+
+function fillFromAamva(parsed){
+  if(!parsed) return;
+  if(parsed.first) $('first').value=parsed.first;
+  if(parsed.last) $('last').value=parsed.last;
+  if(parsed.middle) $('middle').value=parsed.middle;
+  if(parsed.dob) $('dob').value=parsed.dob;
+  if(parsed.street) $('street').value=parsed.street;
+  if(parsed.city) $('city').value=parsed.city;
+  if(parsed.state) $('state').value=parsed.state;
+  if(parsed.zip) $('zip').value=parsed.zip;
+  if(parsed.dl) $('dlnum').value=parsed.dl;
+  $('income').value='';
+  highlightStaffFields();
+}
+
+function highlightStaffFields(){
+  const box=$('staffFields');
+  if(!box) return;
+  box.classList.add('need');
+  ['phone','income','hh'].forEach(id=>{ const el=$(id); if(el) el.classList.add('field-need'); });
+  try{ box.scrollIntoView({behavior:'smooth', block:'center'}); }catch(_){ box.scrollIntoView(true); }
+  setTimeout(()=>{
+    box.classList.remove('need');
+    ['phone','income','hh'].forEach(id=>{ const el=$(id); if(el) el.classList.remove('field-need'); });
+  }, 6000);
+  try{ $('phone').focus(); }catch(_){}
+}
+
+function buildPdf417Hints(){
+  const hints=new Map();
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.PDF_417]);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+  if(ZXing.DecodeHintType.ALSO_INVERTED!=null) hints.set(ZXing.DecodeHintType.ALSO_INVERTED, true);
+  return hints;
+}
+
+function stopIdScan(){
+  scanActive=false;
+  if(zxingLoopTimer){ clearTimeout(zxingLoopTimer); zxingLoopTimer=null; }
+  if(zxingReader){ try{ zxingReader.reset(); }catch(_){} zxingReader=null; }
+  if(mediaStream){ try{ mediaStream.getTracks().forEach(t=>t.stop()); }catch(_){} mediaStream=null; }
+  const v=$('idVideo');
+  if(v){ try{ v.pause(); }catch(_){} try{ v.srcObject=null; }catch(_){} }
+  const cw=$('camWrap'); if(cw) cw.classList.add('hidden');
+  const stop=$('stopCamBtn'); if(stop) stop.classList.add('hidden');
+  const start=$('scanFlBtn'); if(start) start.classList.remove('hidden');
+}
+
+function onPdf417(text){
+  const now=Date.now();
+  if(now-lastDecodeAt<800) return;
+  lastDecodeAt=now;
+  const parsed=parseAamva(text);
+  if(!parsed){
+    $('scanErr').textContent='PDF417 read but AAMVA fields not recognized. Try again or use file picker.';
+    $('scanErr').classList.remove('hidden');
+    return;
+  }
+  fillFromAamva(parsed);
+  stopIdScan();
+  $('scanErr').classList.add('hidden');
+  $('scanOk').textContent='Florida ID scanned — filled name/DOB/address. Staff: enter Phone + Income (not on DL).';
+  $('scanOk').classList.remove('hidden');
+}
+
+async function pdf417Loop(video){
+  if(!scanActive||!zxingReader) return;
+  try{
+    if(video.readyState>=2){
+      const result=await zxingReader.decodeOnceFromVideoElement(video);
+      if(result && scanActive){
+        const text=result.getText?result.getText():String(result.text||'');
+        if(text) onPdf417(text);
+      }
+    }
+  }catch(_){}
+  try{
+    if(scanActive && video.readyState>=2 && video.videoWidth){
+      const c=document.createElement('canvas');
+      const vw=video.videoWidth, vh=video.videoHeight;
+      const bandH=Math.round(vh*0.56);
+      const sy=Math.round((vh-bandH)/2);
+      c.width=Math.round(vw*1.5);
+      c.height=Math.round(bandH*1.5);
+      c.getContext('2d').drawImage(video, 0, sy, vw, bandH, 0, 0, c.width, c.height);
+      try{
+        const r=zxingReader.decodeFromCanvas(c);
+        if(r && scanActive){
+          const text=r.getText?r.getText():String(r.text||'');
+          if(text) onPdf417(text);
+        }
+      }catch(_){}
+    }
+  }catch(_){}
+  if(scanActive) zxingLoopTimer=setTimeout(()=>pdf417Loop(video), 100);
+}
+
+async function startIdScan(){
+  $('scanErr').classList.add('hidden');
+  $('scanOk').classList.add('hidden');
+  if(scanning||scanActive) return;
+  scanning=true;
+  try{
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) throw new Error('Camera API unavailable (need HTTPS)');
+    if(typeof ZXing==='undefined'||!ZXing.BrowserMultiFormatReader) throw new Error('ZXing failed to load');
+    stopIdScan();
+    scanActive=true;
+    $('camWrap').classList.remove('hidden');
+    $('stopCamBtn').classList.remove('hidden');
+    $('scanFlBtn').classList.add('hidden');
+    const video=$('idVideo');
+    mediaStream=await navigator.mediaDevices.getUserMedia({
+      audio:false,
+      video:{ facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080} }
+    });
+    video.srcObject=mediaStream;
+    video.setAttribute('playsinline','true');
+    video.muted=true;
+    await video.play();
+    zxingReader=new ZXing.BrowserMultiFormatReader(buildPdf417Hints());
+    $('scanHint').textContent=VER+' — Camera live. Hold FL DL back so PDF417 fills the orange box.';
+    pdf417Loop(video);
+  }catch(e){
+    const msg=(e&& (e.message||e.name||String(e)))||'unknown';
+    $('scanErr').textContent='Camera: '+msg+'. Use file picker fallback below.';
+    $('scanErr').classList.remove('hidden');
+    stopIdScan();
+  }finally{
+    scanning=false;
+  }
+}
+
+async function tryDecodeFile(file){
+  if(!file||typeof ZXing==='undefined') return;
+  try{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; img.src=url; });
+    const c=document.createElement('canvas');
+    c.width=img.naturalWidth; c.height=img.naturalHeight;
+    c.getContext('2d').drawImage(img,0,0);
+    const reader=new ZXing.BrowserMultiFormatReader(buildPdf417Hints());
+    let text='';
+    try{
+      const r=reader.decodeFromCanvas(c);
+      text=r.getText?r.getText():String(r.text||'');
+    }catch(_){}
+    URL.revokeObjectURL(url);
+    if(text){
+      const parsed=parseAamva(text);
+      if(parsed){
+        fillFromAamva(parsed);
+        $('scanOk').textContent='PDF417 from photo — filled ID fields. Staff: Phone + Income still required.';
+        $('scanOk').classList.remove('hidden');
+        $('scanErr').classList.add('hidden');
+      }
+    }
+  }catch(_){}
+}
+
 function readForm(){
   return {
     first: $('first').value.trim(),
     last: $('last').value.trim(),
+    middle: ($('middle')&&$('middle').value.trim())||'',
     phone: $('phone').value.trim(),
     dob: $('dob').value,
     hh: $('hh').value || '1',
     street: $('street').value.trim(),
     city: $('city').value.trim(),
+    state: ($('state')&&$('state').value.trim())||'FL',
     zip: $('zip').value.trim(),
+    dl: ($('dlnum')&&$('dlnum').value.trim())||'',
     income: $('income').value,
     face: faceData
   };
@@ -259,8 +520,9 @@ function readForm(){
 
 function validate(f){
   if(!f.first || !f.last) return 'First and last name required.';
-  if(digits(f.phone).length!==10) return '10-digit phone required.';
+  if(digits(f.phone).length!==10) return '10-digit phone required (not on DL — staff must enter).';
   if(!f.dob) return 'DOB required.';
+  if(f.income!=='yes' && f.income!=='no') return 'Income yes/no required (not on DL — staff must select).';
   return '';
 }
 
@@ -268,11 +530,12 @@ function openReview(f){
   pending=f;
   const card=$('reviewCard');
   const rows=[
-    ['Name', f.first+' '+f.last],
+    ['Name', [f.first,f.middle,f.last].filter(Boolean).join(' ')],
     ['Phone', fmtPhone(f.phone)],
     ['DOB', f.dob],
+    ['DL', f.dl||'—'],
     ['Household', f.hh],
-    ['Address', [f.street,f.city,'FL',f.zip].filter(Boolean).join(', ')||'—'],
+    ['Address', [f.street,f.city,f.state||'FL',f.zip].filter(Boolean).join(', ')||'—'],
     ['Income OK', f.income==='yes'?'Yes':'No'],
     ['Face photo', f.face?'Attached':'None']
   ];
@@ -285,16 +548,16 @@ function finishNew(f){
   const bar=barcodeFromCase(caseNo);
   const row={
     at:new Date().toISOString(), mode:'new', case:caseNo, barcode:bar,
-    name:f.first+' '+f.last, phone:digits(f.phone), dob:f.dob, hh:f.hh,
-    address:[f.street,f.city,'FL',f.zip].filter(Boolean).join(', '),
-    income:f.income, amount:1, unit:'Boxes/Bags',
+    name:[f.first,f.middle,f.last].filter(Boolean).join(' '), phone:digits(f.phone), dob:f.dob, hh:f.hh,
+    address:[f.street,f.city,f.state||'FL',f.zip].filter(Boolean).join(', '),
+    dl:f.dl||'', income:f.income, amount:1, unit:'Boxes/Bags',
     category:'Food Assistance: Pantry Visit', print:true, face: !!f.face
   };
   persistVisit(row);
   $('doneTitle').textContent='New intake queued';
-  $('doneSub').innerHTML='Pantry Visit <b>1</b> Boxes/Bags · Rollo prints ID<br>'+f.first+' '+f.last+' · Backup downloaded';
+  $('doneSub').innerHTML='Pantry Visit <b>1</b> Boxes/Bags · Rollo prints ID<br>'+row.name+' · Backup downloaded';
   $('idCase').textContent=caseNo;
-  $('idName').textContent=f.first+' '+f.last;
+  $('idName').textContent=row.name;
   $('idBar').textContent=bar+' (Code 128C)';
   document.getElementById('idCard').style.opacity='1';
   show('screen-done');
@@ -385,10 +648,14 @@ $('gateGo').onclick=async()=>{
 };
 refreshQueueCount();
 
+$('scanFlBtn').onclick=()=>startIdScan();
+$('stopCamBtn').onclick=()=>stopIdScan();
+
 $('dlFile').onchange=e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;
   const url=URL.createObjectURL(f);
   const img=$('dlPreview'); img.src=url; img.style.display='block';
+  tryDecodeFile(f);
 };
 $('faceFile').onchange=e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;
@@ -400,7 +667,11 @@ $('faceFile').onchange=e=>{
 $('checkDup').onclick=()=>{
   const f=readForm();
   const err=validate(f);
-  if(err){ $('capErr').textContent=err; $('capErr').classList.remove('hidden'); return; }
+  if(err){
+    $('capErr').textContent=err; $('capErr').classList.remove('hidden');
+    if(/income|phone/i.test(err)) highlightStaffFields();
+    return;
+  }
   $('capErr').classList.add('hidden');
   pending=f;
   const hits=findDupes(f);
@@ -431,9 +702,15 @@ makeHold('useExisting','useFill','useLabel','existing', ()=>{ if(dupHit) finishE
 $('again').onclick=()=>{
   pending=null; dupHit=null; faceData=null;
   resetHold();
-  ['first','last','phone','street','zip'].forEach(id=>$(id).value='');
+  stopIdScan();
+  ['first','last','middle','phone','street','zip','dlnum'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
   $('dob').value=''; $('hh').value='1'; $('city').value='Miami';
+  if($('state')) $('state').value='FL';
+  $('income').value='';
   $('dlPreview').style.display='none'; $('dlFile').value=''; $('faceFile').value='';
+  if($('scanOk')) $('scanOk').classList.add('hidden');
+  if($('scanErr')) $('scanErr').classList.add('hidden');
+  $('capErr').classList.add('hidden');
   document.getElementById('idCard').style.opacity='1';
   refreshQueueCount();
   show('screen-capture');
