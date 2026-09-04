@@ -69,6 +69,15 @@
   .gate { padding:40px 16px; }
   .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
   .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:10px; }
+
+  .btn.torch { background:#ff9800; color:#111; border:0; font-size:18px; padding:16px; margin-top:10px; box-shadow:0 2px 0 #e65100; }
+  .btn.torch.on { background:#ffeb3b; }
+  .dbg { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; line-height:1.35; color:#444; background:#f0f0f0; border-radius:8px; padding:8px 10px; margin:8px 0 0; word-break:break-all; white-space:pre-wrap; }
+  .dbg.hidden { display:none !important; }
+  #photoPick { display:none; }
+  #testBarcodeBox { text-align:center; margin-top:10px; }
+  #testBarcodeBox img { max-width:100%; height:auto; background:#fff; border:1px solid #ddd; border-radius:8px; padding:8px; }
+  .tiny-link { font-size:12px; color:var(--g); font-weight:700; text-decoration:none; display:inline-block; margin-top:8px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -94,22 +103,33 @@
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Point the green strip at the Oasis Code-128. Hard refresh ?v=20260903e if camera was stuck.</p>
+        <p class="sub">Point the green strip at the Oasis Code-128. Hard refresh ?v=20260903f if camera was stuck.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
-          <video id="scanVideo" playsinline muted autoplay></video>
+          <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
           <div class="scan-guide" id="scanGuide"></div>
         </div>
         <canvas id="scanCanvas" class="hidden" aria-hidden="true"></canvas>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260903e — Allow camera. Hold Oasis Code-128 flat in the green strip (crop+contrast ZXing).</p>
-        <div class="row3">
-          <button class="btn secondary" id="retryCam">Retry</button>
-          <button class="btn secondary" id="torchBtn" disabled>Torch</button>
+        <p class="hint" id="scanHint">v20260903f — Allow camera. Hold Oasis Code-128 flat in the green strip.</p>
+        <pre class="dbg" id="scanDbg">dbg: waiting…</pre>
+        <button class="btn torch" id="torchBtn" disabled>Torch</button>
+        <div class="row2" style="margin-top:10px">
+          <button class="btn secondary" id="retryCam">Retry camera</button>
+          <button class="btn secondary" id="photoTestBtn">Test with photo</button>
+        </div>
+        <input id="photoPick" type="file" accept="image/*" capture="environment">
+        <div class="row2">
+          <button class="btn secondary" id="toggleDbg">Hide debug</button>
           <button class="btn secondary" id="toManual">Type #</button>
         </div>
         <button class="btn secondary" id="toPhone" style="margin-top:10px">Search by phone</button>
-        <p class="hint">Emergency only: type case # or search phone. Sunday plan = scan.</p>
+        <a class="tiny-link" id="showTestBarcode" href="#">show test barcode (00378814)</a>
+        <div id="testBarcodeBox" class="hidden">
+          <img id="testBarcodeImg" alt="Code-128 00378814" src="test-barcode.png">
+          <p class="hint">Point phone at this Code-128 (00378814 / Ana Ramos).</p>
+        </div>
+        <p class="hint">Emergency only: type case # or search phone. Sunday plan = phone camera scan.</p>
       </section>
 
       <section id="screen-manual" class="hidden">
@@ -171,14 +191,16 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260903e';
+const VER = 'v20260903f';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
 let torchOn = false;
 let zxingReader128 = null;
 let zxingReaderMulti = null;
+let zxingReaderStream = null;
 let zxingLoopTimer = null;
+let streamControls = null;
 let nativeRaf = null;
 let nativeDetector = null;
 let scanning = false;
@@ -195,6 +217,10 @@ let decodeCanvas = null;
 let decodeCtx = null;
 let boostCanvas = null;
 let boostCtx = null;
+const CROP_BANDS = [0.20, 0.28, 0.40];
+let dbg = { engine: '—', raw: '—', video: '—', crop: '—', note: '' };
+let dbgVisible = true;
+let zxingReadyPromise = null;
 
 const $ = (id) => document.getElementById(id);
 const show = (id) => {
@@ -203,6 +229,34 @@ const show = (id) => {
   if (id === 'screen-scan') focusWedge();
   if (id === 'screen-match') resetHold();
 };
+
+function waitForZXing(timeoutMs) {
+  if (typeof ZXing !== 'undefined' && ZXing.BrowserMultiFormatReader) return Promise.resolve(true);
+  if (zxingReadyPromise) return zxingReadyPromise;
+  zxingReadyPromise = new Promise((resolve) => {
+    const t0 = Date.now();
+    const tick = () => {
+      if (typeof ZXing !== 'undefined' && ZXing.BrowserMultiFormatReader) return resolve(true);
+      if (Date.now() - t0 > (timeoutMs || 8000)) return resolve(false);
+      setTimeout(tick, 80);
+    };
+    tick();
+  });
+  return zxingReadyPromise;
+}
+function setDbg(partial) {
+  Object.assign(dbg, partial || {});
+  const el = document.getElementById("scanDbg");
+  if (!el) return;
+  el.textContent =
+    VER + ' dbg\n' +
+    'engine: ' + (dbg.engine || '—') + '\n' +
+    'raw: ' + (dbg.raw || '—') + '\n' +
+    'video: ' + (dbg.video || '—') + '\n' +
+    'crop: ' + (dbg.crop || '—') +
+    (dbg.note ? ('\n' + dbg.note) : '');
+}
+
 const digits = (p) => (p||'').replace(/\D/g,'').replace(/^1(\d{10})$/,'$1');
 const fmtPhone = (p) => {
   const d = digits(p);
@@ -347,30 +401,41 @@ function findByPhone(p) {
 
 function sanitizeBarcodeText(raw) {
   let t = String(raw||'').trim();
-  // ZXing Code-128 sometimes prefixes charset markers like {[C]
-  t = t.replace(/^\{\[[A-Z]\]/i,'').replace(/\}+$/,'');
+  // ZXing Code-128 charset markers: {[C]00378814} -> 00378814
+  t = t.replace(/^\{\[[A-Z0-9]\]/i, '');
+  t = t.replace(/^\[\[[A-Z]\]/i, '');
+  t = t.replace(/\{[A-Z]\}/gi, '');
+  t = t.replace(/\}+$/g, '');
+  t = t.replace(/^\[C\]/i, '');
   const m = t.match(/(\d{6,14})/);
   if (m) return m[1];
-  return t;
+  return t.trim();
 }
 
-function onDecoded(decoded) {
-  if (!scanActive) return;
+function onDecoded(decoded, source) {
+  if (!scanActive && source !== 'photo') return;
   const now = Date.now();
-  if (now - lastDecodeAt < 350) return;
+  if (source !== 'photo' && now - lastDecodeAt < 280) return;
   lastDecodeAt = now;
+  const rawIn = String(decoded||'');
   decoded = sanitizeBarcodeText(decoded);
+  setDbg({ raw: rawIn + (decoded !== rawIn ? (' → ' + decoded) : ''), engine: source || dbg.engine });
+  if (!decoded) return;
   const hit = findByBarcode(decoded);
   if (hit) {
+    // ONLY stop after successful match
     stopScan();
     openMatch(hit);
     return;
   }
-  if (decoded === lastBad && now - lastBadAt < 2500) return;
+  // Keep scanning — show locked code clearly
+  if (decoded === lastBad && now - lastBadAt < 1800 && source !== 'photo') return;
   lastBad = decoded;
   lastBadAt = now;
-  $('scanErr').textContent = 'Scanned ' + decoded + ' — not in local Oasis snapshot.';
+  const msg = 'Locked CODE ' + decoded + ' — not in Sunday snapshot; refresh cases.json';
+  $('scanErr').textContent = msg;
   $('scanErr').classList.remove('hidden');
+  setDbg({ note: msg });
 }
 
 function focusWedge() {
@@ -401,13 +466,15 @@ function ensureCanvases() {
   }
 }
 
-/** Draw video crop of center ~28% height strip, full width, upscaled 2x. */
-function drawStrip(video, upscale) {
+/** Center horizontal band crop; bandFrac of height; upscaled. */
+function drawStripBand(videoOrCanvas, bandFrac, upscale) {
   ensureCanvases();
-  const vw = video.videoWidth || 0;
-  const vh = video.videoHeight || 0;
+  const isVideo = !!videoOrCanvas.videoWidth;
+  const vw = isVideo ? videoOrCanvas.videoWidth : videoOrCanvas.width;
+  const vh = isVideo ? videoOrCanvas.videoHeight : videoOrCanvas.height;
   if (vw < 8 || vh < 8) return null;
-  const bandH = Math.max(24, Math.round(vh * 0.28));
+  const frac = bandFrac || 0.28;
+  const bandH = Math.max(24, Math.round(vh * frac));
   const sy = Math.max(0, Math.round((vh - bandH) / 2));
   const scale = upscale || 2;
   const dw = Math.round(vw * scale);
@@ -415,14 +482,19 @@ function drawStrip(video, upscale) {
   decodeCanvas.width = dw;
   decodeCanvas.height = dh;
   decodeCtx.imageSmoothingEnabled = false;
-  decodeCtx.drawImage(video, 0, sy, vw, bandH, 0, 0, dw, dh);
-  return decodeCanvas;
+  decodeCtx.drawImage(videoOrCanvas, 0, sy, vw, bandH, 0, 0, dw, dh);
+  return { canvas: decodeCanvas, w: dw, h: dh, band: Math.round(frac * 100) + '%', sy: sy, bandH: bandH, vw: vw, vh: vh };
+}
+function drawStrip(video, upscale) {
+  const info = drawStripBand(video, 0.28, upscale);
+  return info ? info.canvas : null;
 }
 
-function drawFull(video, maxW) {
+function drawFull(src, maxW) {
   ensureCanvases();
-  const vw = video.videoWidth || 0;
-  const vh = video.videoHeight || 0;
+  const isVideo = !!src.videoWidth;
+  const vw = isVideo ? src.videoWidth : src.width;
+  const vh = isVideo ? src.videoHeight : src.height;
   if (vw < 8 || vh < 8) return null;
   const scale = Math.min(1, (maxW || 1280) / vw);
   const dw = Math.round(vw * scale);
@@ -430,7 +502,7 @@ function drawFull(video, maxW) {
   decodeCanvas.width = dw;
   decodeCanvas.height = dh;
   decodeCtx.imageSmoothingEnabled = true;
-  decodeCtx.drawImage(video, 0, 0, vw, vh, 0, 0, dw, dh);
+  decodeCtx.drawImage(src, 0, 0, vw, vh, 0, 0, dw, dh);
   return decodeCanvas;
 }
 
@@ -456,6 +528,57 @@ function contrastBoost(srcCanvas) {
   }
   boostCtx.putImageData(img, 0, 0);
   return boostCanvas;
+}
+
+
+function cloneToBoost(srcCanvas) {
+  ensureCanvases();
+  const w = srcCanvas.width;
+  const h = srcCanvas.height;
+  boostCanvas.width = w;
+  boostCanvas.height = h;
+  boostCtx.drawImage(srcCanvas, 0, 0);
+  return boostCtx.getImageData(0, 0, w, h);
+}
+function putBoost(img) {
+  boostCtx.putImageData(img, 0, 0);
+  return boostCanvas;
+}
+function variantGrayscale(srcCanvas) {
+  const img = cloneToBoost(srcCanvas);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const y = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+    d[i] = d[i+1] = d[i+2] = y;
+  }
+  return putBoost(img);
+}
+function variantContrast(srcCanvas, contrast, lo, hi) {
+  const img = cloneToBoost(srcCanvas);
+  const d = img.data;
+  const mid = 128;
+  const c = contrast == null ? 1.85 : contrast;
+  const L = lo == null ? 90 : lo;
+  const H = hi == null ? 165 : hi;
+  for (let i = 0; i < d.length; i += 4) {
+    let y = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+    y = (y - mid) * c + mid;
+    if (y < L) y = 0;
+    else if (y > H) y = 255;
+    y = y < 0 ? 0 : (y > 255 ? 255 : y);
+    d[i] = d[i+1] = d[i+2] = y;
+  }
+  return putBoost(img);
+}
+function variantInvert(srcCanvas) {
+  const img = cloneToBoost(srcCanvas);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i] = 255 - d[i];
+    d[i+1] = 255 - d[i+1];
+    d[i+2] = 255 - d[i+2];
+  }
+  return putBoost(img);
 }
 
 function tryDecodeCanvas(reader, canvas) {
@@ -519,6 +642,29 @@ function decodeWithHints(canvas, formats) {
   return '';
 }
 
+
+/** Try raw + grayscale + contrast + invert(+contrast) on one canvas. */
+function decodeVariants(canvas, formats, label) {
+  if (!canvas) return '';
+  const tries = [
+    ['raw', canvas],
+    ['gray', () => variantGrayscale(canvas)],
+    ['contrast', () => variantContrast(canvas, 1.85, 90, 165)],
+    ['contrast2', () => variantContrast(canvas, 2.4, 70, 180)],
+    ['invert', () => variantInvert(canvas)],
+    ['inv+c', () => variantContrast(variantInvert(canvas), 1.85, 90, 165)]
+  ];
+  for (let i = 0; i < tries.length; i++) {
+    const name = tries[i][0];
+    let c = tries[i][1];
+    try { if (typeof c === 'function') c = c(); } catch (_) { continue; }
+    setDbg({ engine: (label || 'canvas') + '/' + name });
+    const tt = decodeWithHints(c, formats);
+    if (tt) return tt;
+  }
+  return '';
+}
+
 function decodePass(reader, canvas) {
   // Prefer MultiFormatReader+luminance (decodeFromCanvas is unreliable in UMD 0.21.3)
   const fmt128 = [ZXing.BarcodeFormat.CODE_128];
@@ -561,6 +707,14 @@ function stopScan() {
     nativeRaf = null;
   }
   nativeDetector = null;
+  if (streamControls && typeof streamControls.stop === 'function') {
+    try { streamControls.stop(); } catch (_) {}
+  }
+  streamControls = null;
+  if (zxingReaderStream) {
+    try { zxingReaderStream.reset(); } catch (_) {}
+    zxingReaderStream = null;
+  }
   if (zxingReader128) {
     try { zxingReader128.reset(); } catch (_) {}
     zxingReader128 = null;
