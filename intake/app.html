@@ -10,9 +10,13 @@
   * { box-sizing: border-box; }
   body { margin:0; font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif; color:var(--ink); background:#f7f7f7; }
   .wrap { max-width:430px; margin:0 auto; min-height:100vh; background:#fff; display:flex; flex-direction:column; }
-  header { padding:14px 16px 8px; display:flex; justify-content:space-between; align-items:center; }
+  header { padding:14px 16px 8px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
   .badge { background:var(--g2); color:var(--g); font-weight:700; font-size:12px; padding:6px 10px; border-radius:999px; letter-spacing:.04em; }
   .staff { font-size:12px; color:var(--muted); }
+  .hdr-right { display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+  .bak-link { font-size:12px; font-weight:700; color:var(--g); text-decoration:none; }
+  .bak-link:hover { text-decoration:underline; }
+  .qcount { font-size:11px; color:var(--muted); }
   main { flex:1; padding:0 16px 24px; }
   h1 { font-size:22px; margin:8px 0 4px; }
   .sub { color:var(--muted); font-size:14px; margin:0 0 12px; }
@@ -27,6 +31,19 @@
   .btn.secondary { background:#fff; color:var(--g); border:2px solid var(--g); }
   .btn.ghost { background:#eee; color:#333; }
   .btn + .btn { margin-top:10px; }
+  .hold-wrap { margin-top:12px; user-select:none; -webkit-user-select:none; touch-action:none; }
+  .hold-btn {
+    position:relative; overflow:hidden; display:block; width:100%; border:0; border-radius:12px;
+    padding:16px; font-size:16px; font-weight:700; cursor:pointer; background:#c8e6d3; color:#0d5c2e;
+  }
+  .hold-btn .fill {
+    position:absolute; left:0; top:0; bottom:0; width:0%; background:var(--g); z-index:0;
+    transition: none;
+  }
+  .hold-btn .label { position:relative; z-index:1; }
+  .hold-btn.holding .fill { background:var(--g); }
+  .hold-btn.done { background:var(--g); color:#fff; }
+  .hold-hint { font-size:12px; color:var(--muted); text-align:center; margin:8px 0 0; }
   .hint { font-size:13px; color:var(--muted); text-align:center; margin:10px 0 0; }
   .card { border:1px solid #e5e5e5; border-radius:16px; padding:16px; margin-top:12px; }
   .photo { width:96px; height:96px; border-radius:50%; background:#dfe6e9; margin:0 auto 12px; display:flex; align-items:center; justify-content:center; color:#888; font-size:12px; font-weight:700; overflow:hidden; }
@@ -57,12 +74,17 @@
     <input id="pass" type="password" placeholder="Passcode" autocomplete="current-password">
     <button class="btn primary" id="gateGo">Open app</button>
     <p class="err hidden" id="gateErr">Wrong passcode</p>
+    <p class="qcount hidden" id="gateQueueHint"></p>
   </div>
 
   <div id="app" class="hidden">
     <header>
       <span class="badge">RETURNING</span>
-      <span class="staff" id="staffLabel">Miami Bethany</span>
+      <div class="hdr-right">
+        <span class="staff" id="staffLabel">Miami Bethany</span>
+        <a class="bak-link" href="backup.html">Backup / queue</a>
+        <span class="qcount" id="queueCount"></span>
+      </div>
     </header>
     <main>
       <section id="screen-scan">
@@ -113,7 +135,13 @@
             <span id="matchPhone">—</span>
           </div>
         </div>
-        <button class="btn primary" id="confirmMatch">Confirm this person</button>
+        <div class="hold-wrap">
+          <button type="button" class="hold-btn" id="confirmMatch" aria-label="Hold to confirm">
+            <span class="fill" id="confirmFill"></span>
+            <span class="label" id="confirmLabel">Hold to confirm</span>
+          </button>
+          <p class="hold-hint">Press and hold ~2.5s. Release early to cancel.</p>
+        </div>
         <button class="btn ghost" id="notThem">Not them</button>
       </section>
 
@@ -121,28 +149,37 @@
         <div class="ok">
           <div class="check">✓</div>
           <h1>Pantry Visit recorded</h1>
-          <p class="sub"><b>1</b> Boxes/Bags · Food Assistance: Pantry Visit<br>No print</p>
+          <p class="sub"><b>1</b> Boxes/Bags · Food Assistance: Pantry Visit<br>No print · Backup downloaded</p>
           <p class="meta" id="doneWho"></p>
         </div>
         <button class="btn primary" id="again">Next person</button>
+        <a class="btn ghost" href="backup.html" style="text-align:center;text-decoration:none;margin-top:10px;display:block">Backup / queue</a>
       </section>
     </main>
   </div>
 </div>
 <script>
 const PASS = 'Pedro@2008!';
+const QUEUE_KEY = 'mb-pantry-queue';
+const BACKUP_KEY = 'mb-pantry-backup';
+const HOLD_MS = 2500;
 let cases = [];
 let scanner = null;
 let current = null;
 let lastBad = '';
 let lastBadAt = 0;
 let scanning = false;
+let holdTimer = null;
+let holdStart = 0;
+let holdRaf = null;
+let holdDone = false;
 
 const $ = (id) => document.getElementById(id);
 const show = (id) => {
   ['screen-scan','screen-phone','screen-match','screen-done','screen-manual'].forEach(s => $(s).classList.add('hidden'));
   $(id).classList.remove('hidden');
   if (id === 'screen-scan') focusWedge();
+  if (id === 'screen-match') resetHold();
 };
 const digits = (p) => (p||'').replace(/\D/g,'').replace(/^1(\d{10})$/,'$1');
 const fmtPhone = (p) => {
@@ -150,6 +187,118 @@ const fmtPhone = (p) => {
   if (d.length!==10) return p||'';
   return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
 };
+
+function queueLen() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]').length; } catch (_) { return 0; }
+}
+function refreshQueueCount() {
+  const n = queueLen();
+  const el = $('queueCount');
+  if (el) el.textContent = n ? (n + ' visit' + (n===1?'':'s') + ' saved') : '';
+  const g = $('gateQueueHint');
+  if (g) {
+    if (n > 0) {
+      g.textContent = n + ' visit' + (n===1?'':'s') + ' saved on this device';
+      g.classList.remove('hidden');
+    } else {
+      g.classList.add('hidden');
+    }
+  }
+}
+
+function stampName(caseNo, at) {
+  const d = at ? new Date(at) : new Date();
+  const pad = (x) => String(x).padStart(2,'0');
+  const y = d.getFullYear();
+  const m = pad(d.getMonth()+1);
+  const day = pad(d.getDate());
+  const h = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  const s = pad(d.getSeconds());
+  const c = String(caseNo||'unknown').replace(/[^A-Za-z0-9]/g,'') || 'unknown';
+  return 'pantry-visit-' + c + '-' + y + m + day + '-' + h + mi + s + '.json';
+}
+
+function downloadVisit(row) {
+  const blob = new Blob([JSON.stringify(row, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = stampName(row.case, row.at);
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+
+function logVisit(c) {
+  const row = {
+    at: new Date().toISOString(),
+    case: c.case,
+    name: c.name,
+    phone: c.phone,
+    amount: 1,
+    unit: 'Boxes/Bags',
+    category: 'Food Assistance: Pantry Visit',
+    print: false,
+    mode: 'returning'
+  };
+  const q = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
+  q.push(row);
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  const b = JSON.parse(localStorage.getItem(BACKUP_KEY) || '[]');
+  b.push(row);
+  localStorage.setItem(BACKUP_KEY, JSON.stringify(b));
+  downloadVisit(row);
+  refreshQueueCount();
+  return row;
+}
+
+function resetHold() {
+  holdDone = false;
+  if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+  if (holdRaf) { cancelAnimationFrame(holdRaf); holdRaf = null; }
+  const btn = $('confirmMatch');
+  const fill = $('confirmFill');
+  const label = $('confirmLabel');
+  if (!btn) return;
+  btn.classList.remove('holding','done');
+  if (fill) fill.style.width = '0%';
+  if (label) label.textContent = 'Hold to confirm';
+}
+
+function holdTick() {
+  if (!holdStart || holdDone) return;
+  const pct = Math.min(100, ((Date.now() - holdStart) / HOLD_MS) * 100);
+  const fill = $('confirmFill');
+  if (fill) fill.style.width = pct + '%';
+  if (pct < 100) holdRaf = requestAnimationFrame(holdTick);
+}
+
+function startHold(ev) {
+  if (ev) { ev.preventDefault(); }
+  if (holdDone || !current) return;
+  holdStart = Date.now();
+  $('confirmMatch').classList.add('holding');
+  $('confirmLabel').textContent = 'Keep holding…';
+  holdTick();
+  holdTimer = setTimeout(() => {
+    holdDone = true;
+    if (holdRaf) cancelAnimationFrame(holdRaf);
+    const fill = $('confirmFill');
+    if (fill) fill.style.width = '100%';
+    $('confirmMatch').classList.add('done');
+    $('confirmLabel').textContent = 'Confirmed';
+    const who = current;
+    logVisit(who);
+    $('doneWho').textContent = (who.name||'') + ' · ' + (who.case||'');
+    setTimeout(() => show('screen-done'), 180);
+  }, HOLD_MS);
+}
+
+function cancelHold(ev) {
+  if (ev) { ev.preventDefault(); }
+  if (holdDone) return;
+  resetHold();
+}
 
 function findByBarcode(raw) {
   const t = String(raw||'').trim();
@@ -248,7 +397,6 @@ async function startScan() {
       onDecoded
     );
     $('scanHint').textContent = 'Camera live. Hold Oasis barcode in the green box (or use a USB scanner).';
-    // guide sits over video; keep it
     if (!$('scanGuide')) {
       const g = document.createElement('div');
       g.className = 'scan-guide';
@@ -288,23 +436,6 @@ function openMatch(c) {
   show('screen-match');
 }
 
-function logVisit(c) {
-  const key = 'mb-pantry-queue';
-  const q = JSON.parse(localStorage.getItem(key) || '[]');
-  q.push({
-    at: new Date().toISOString(),
-    case: c.case,
-    name: c.name,
-    phone: c.phone,
-    amount: 1,
-    unit: 'Boxes/Bags',
-    category: 'Food Assistance: Pantry Visit',
-    print: false,
-    mode: 'returning'
-  });
-  localStorage.setItem(key, JSON.stringify(q));
-}
-
 $('gateGo').onclick = async () => {
   if ($('pass').value !== PASS) {
     $('gateErr').classList.remove('hidden');
@@ -320,9 +451,13 @@ $('gateGo').onclick = async () => {
   } catch (e) {
     $('staffLabel').textContent = 'Lookup file missing';
   }
+  refreshQueueCount();
   show('screen-scan');
   startScan();
 };
+
+// Show queue hint even before unlock if items exist
+refreshQueueCount();
 
 $('retryCam').onclick = async () => {
   await stopScan();
@@ -382,23 +517,31 @@ $('phoneSearch').onclick = () => {
     $('phoneList').appendChild(b);
   });
 };
-$('confirmMatch').onclick = () => {
-  logVisit(current);
-  $('doneWho').textContent = (current.name||'') + ' · ' + (current.case||'');
-  show('screen-done');
-};
+
+(function bindHold() {
+  const btn = $('confirmMatch');
+  const opts = { passive: false };
+  btn.addEventListener('pointerdown', startHold, opts);
+  btn.addEventListener('pointerup', cancelHold, opts);
+  btn.addEventListener('pointerleave', cancelHold, opts);
+  btn.addEventListener('pointercancel', cancelHold, opts);
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+})();
+
 $('notThem').onclick = async () => {
   current = null;
+  resetHold();
   show('screen-scan');
   startScan();
 };
 $('again').onclick = async () => {
   current = null;
+  resetHold();
+  refreshQueueCount();
   show('screen-scan');
   startScan();
 };
 
-// Hardware / keyboard-wedge scanners dump digits then Enter
 $('wedge').addEventListener('keydown', (ev) => {
   if (ev.key !== 'Enter') return;
   ev.preventDefault();
@@ -411,7 +554,6 @@ document.addEventListener('visibilitychange', () => {
     focusWedge();
   }
 });
-// Keep wedge focused while on scan screen (USB scanners need a focused input)
 setInterval(() => {
   if ($('app').classList.contains('hidden')) return;
   if ($('screen-scan').classList.contains('hidden')) return;
