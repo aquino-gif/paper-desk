@@ -476,36 +476,51 @@ function textFromResult(result) {
   return String(result.text || '');
 }
 
-function decodePass(reader, canvas) {
-  if (!reader || !canvas) return '';
-  // Raw strip
-  let r = null;
-  try { r = reader.decodeFromCanvas(canvas); } catch (_) { r = null; }
-  if (r) return textFromResult(r);
-  // Contrast-boosted
+function decodeWithHints(canvas, formats) {
+  if (!canvas) return '';
+  const hints = buildHints(formats);
+  const attempt = (c) => {
+    const lum = new ZXing.HTMLCanvasElementLuminanceSource(c);
+    const bin = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+    const reader = new ZXing.MultiFormatReader();
+    reader.setHints(hints);
+    const r = reader.decode(bin);
+    return textFromResult(r);
+  };
   try {
-    const boosted = contrastBoost(canvas);
-    r = reader.decodeFromCanvas(boosted);
-    if (r) return textFromResult(r);
+    const t = attempt(canvas);
+    if (t) return t;
   } catch (_) {}
-  // Luminance buffer path
+  try {
+    const t = attempt(contrastBoost(canvas));
+    if (t) return t;
+  } catch (_) {}
+  // Also try inverted luminance (dark cards / glare)
   try {
     const lum = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
-    const bin = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
-    const reader2 = new ZXing.MultiFormatReader();
-    reader2.setHints(buildHints([ZXing.BarcodeFormat.CODE_128]));
-    r = reader2.decode(bin);
-    if (r) return textFromResult(r);
+    const inv = new ZXing.InvertedLuminanceSource(lum);
+    const bin = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(inv));
+    const reader = new ZXing.MultiFormatReader();
+    reader.setHints(hints);
+    const r = reader.decode(bin);
+    const t = textFromResult(r);
+    if (t) return t;
   } catch (_) {}
-  try {
-    const boosted = contrastBoost(canvas);
-    const lum = new ZXing.HTMLCanvasElementLuminanceSource(boosted);
-    const bin = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
-    const reader2 = new ZXing.MultiFormatReader();
-    reader2.setHints(buildHints([ZXing.BarcodeFormat.CODE_128]));
-    r = reader2.decode(bin);
-    if (r) return textFromResult(r);
-  } catch (_) {}
+  return '';
+}
+
+function decodePass(reader, canvas) {
+  // Prefer MultiFormatReader+luminance (decodeFromCanvas is unreliable in UMD 0.21.3)
+  const fmt128 = [ZXing.BarcodeFormat.CODE_128];
+  let t = decodeWithHints(canvas, fmt128);
+  if (t) return t;
+  if (reader) {
+    try {
+      const r = reader.decodeFromCanvas(canvas);
+      t = textFromResult(r);
+      if (t) return t;
+    } catch (_) {}
+  }
   return '';
 }
 
@@ -553,23 +568,37 @@ async function zxingDecodeLoop(video) {
   if (!scanActive) return;
   try {
     if (video.readyState >= 2 && video.videoWidth > 0) {
-      // 1) Primary: green-strip crop @ 2x, CODE_128 only
+      const fmt128 = [ZXing.BarcodeFormat.CODE_128];
+      const fmtMulti = [
+        ZXing.BarcodeFormat.CODE_128,
+        ZXing.BarcodeFormat.CODE_39,
+        ZXing.BarcodeFormat.EAN_13,
+        ZXing.BarcodeFormat.EAN_8,
+        ZXing.BarcodeFormat.UPC_A,
+        ZXing.BarcodeFormat.UPC_E,
+        ZXing.BarcodeFormat.ITF,
+        ZXing.BarcodeFormat.CODABAR
+      ];
+      // 1) Primary: green-strip crop @ 2x, CODE_128 only (+contrast/invert)
       const strip = drawStrip(video, 2);
       let text = '';
-      if (strip && zxingReader128) {
-        text = decodePass(zxingReader128, strip);
+      if (strip) text = decodeWithHints(strip, fmt128);
+      // 1b) strip @ 3x if still empty (thin bars / distance)
+      if (!text) {
+        const strip3 = drawStrip(video, 3);
+        if (strip3) text = decodeWithHints(strip3, fmt128);
       }
-      // 2) Same strip with multi-format fallback
-      if (!text && strip && zxingReaderMulti) {
-        text = decodePass(zxingReaderMulti, strip);
-      }
-      // 3) Full-frame secondary (CODE_128 then multi)
+      // 2) Same strip multi-format fallback
+      if (!text && strip) text = decodeWithHints(strip, fmtMulti);
+      // 3) Full-frame secondary
       if (!text) {
         const full = drawFull(video, 1280);
-        if (full && zxingReader128) text = decodePass(zxingReader128, full);
-        if (!text && full && zxingReaderMulti) text = decodePass(zxingReaderMulti, full);
+        if (full) {
+          text = decodeWithHints(full, fmt128);
+          if (!text) text = decodeWithHints(full, fmtMulti);
+        }
       }
-      // 4) Also try library video-element path as last resort
+      // 4) Library video-element path last resort
       if (!text && zxingReader128) {
         try {
           const result = await zxingReader128.decodeOnceFromVideoElement(video);
