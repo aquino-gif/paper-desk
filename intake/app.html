@@ -345,11 +345,21 @@ function findByPhone(p) {
   return cases.filter(c => c.phone === d);
 }
 
+function sanitizeBarcodeText(raw) {
+  let t = String(raw||'').trim();
+  // ZXing Code-128 sometimes prefixes charset markers like {[C]
+  t = t.replace(/^\{\[[A-Z]\]/i,'').replace(/\}+$/,'');
+  const m = t.match(/(\d{6,14})/);
+  if (m) return m[1];
+  return t;
+}
+
 function onDecoded(decoded) {
   if (!scanActive) return;
   const now = Date.now();
   if (now - lastDecodeAt < 350) return;
   lastDecodeAt = now;
+  decoded = sanitizeBarcodeText(decoded);
   const hit = findByBarcode(decoded);
   if (hit) {
     stopScan();
