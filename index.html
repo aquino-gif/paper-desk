@@ -255,7 +255,7 @@
   <div class="sleeves">
     <div class="card" id="mkCard">
       <div class="name">Menu Kronos-mini <span class="winbadge" id="mkWin" hidden>WINNING</span></div>
-      <div class="eq">$<span id="mkEq">499.75</span></div>
+      <div class="eq">$<span id="mkEq">503.47</span></div>
       <div id="mkPnl" class="pnl">—</div>
       <div class="meta">
         <div>10 names × $50 <b>opened</b></div>
@@ -264,7 +264,7 @@
     </div>
     <div class="card" id="mvCard">
       <div class="name">Buy the menu (versus) <span class="winbadge" id="mvWin" hidden>WINNING</span></div>
-      <div class="eq">$<span id="mvEq">499.75</span></div>
+      <div class="eq">$<span id="mvEq">506.26</span></div>
       <div id="mvPnl" class="pnl">—</div>
       <div class="meta">
         <div>Always <b>LONG $50</b></div>
@@ -414,19 +414,21 @@ async function tick(){
 
 
 const MENU = {
-  startEq: 499.75,
+  startEq: 503.4729,
+  kStartEq: 503.4729,
+  vStartEq: 506.2593,
   notional: 50,
   names: [
-    {name:"ETH-USDT", kind:"crypto", binance:"ETHUSDT", yahoo:null, kronos:"LONG", versus:"LONG", entry:2510.56, pred:2523.32055664},
-    {name:"SOL-USDT", kind:"crypto", binance:"SOLUSDT", yahoo:null, kronos:"SHORT", versus:"LONG", entry:109.12, pred:104.88875580},
-    {name:"SPY", kind:"stock", binance:null, yahoo:"SPY", kronos:"SHORT", versus:"LONG", entry:769.7697, pred:765.10491943},
-    {name:"QQQ", kind:"stock", binance:null, yahoo:"QQQ", kronos:"SHORT", versus:"LONG", entry:718.88, pred:712.23699951},
-    {name:"NVDA", kind:"stock", binance:null, yahoo:"NVDA", kronos:"LONG", versus:"LONG", entry:226.25, pred:231.96197510},
-    {name:"TSLA", kind:"stock", binance:null, yahoo:"TSLA", kronos:"LONG", versus:"LONG", entry:354.5783, pred:361.22018433},
-    {name:"AAPL", kind:"stock", binance:null, yahoo:"AAPL", kronos:"LONG", versus:"LONG", entry:314.67, pred:314.89840698},
-    {name:"AMZN", kind:"stock", binance:null, yahoo:"AMZN", kronos:"SHORT", versus:"LONG", entry:256.30, pred:254.38442993},
-    {name:"META", kind:"stock", binance:null, yahoo:"META", kronos:"SHORT", versus:"LONG", entry:571.4494, pred:558.73815918},
-    {name:"AMD", kind:"stock", binance:null, yahoo:"AMD", kronos:"SHORT", versus:"LONG", entry:474.61, pred:459.72753906}
+    {name:"ETH-USDT", kind:"crypto", binance:"ETHUSDT", yahoo:null, kronos:"SHORT", versus:"LONG", entry:2524.46, pred:2515.41064453125},
+    {name:"SOL-USDT", kind:"crypto", binance:"SOLUSDT", yahoo:null, kronos:"LONG", versus:"LONG", entry:104.15, pred:106.23960876464844},
+    {name:"SPY", kind:"stock", binance:null, yahoo:"SPY", kronos:"LONG", versus:"LONG", entry:773.611, pred:777.419921875},
+    {name:"QQQ", kind:"stock", binance:null, yahoo:"QQQ", kronos:"LONG", versus:"LONG", entry:721.1763, pred:728.8910522460938},
+    {name:"NVDA", kind:"stock", binance:null, yahoo:"NVDA", kronos:"LONG", versus:"LONG", entry:231.3746, pred:229.03781127929688},
+    {name:"TSLA", kind:"stock", binance:null, yahoo:"TSLA", kronos:"SHORT", versus:"LONG", entry:368.2245, pred:372.016357421875},
+    {name:"AAPL", kind:"stock", binance:null, yahoo:"AAPL", kronos:"SHORT", versus:"LONG", entry:326.36, pred:325.19281005859375},
+    {name:"AMZN", kind:"stock", binance:null, yahoo:"AMZN", kronos:"SHORT", versus:"LONG", entry:260.3201, pred:251.0634307861328},
+    {name:"META", kind:"stock", binance:null, yahoo:"META", kronos:"SHORT", versus:"LONG", entry:613.446, pred:610.3637084960938},
+    {name:"AMD", kind:"stock", binance:null, yahoo:"AMD", kronos:"SHORT", versus:"LONG", entry:462.53, pred:446.604736328125}
   ]
 };
 const lastPx = {};
@@ -454,8 +456,8 @@ function renderMenu(){
       +"<td class='num "+(vp>=0?"up":"dn")+"'>"+sign(vp)+"</td>"
       +"<td>"+feed+"</td></tr>";
   }).join("");
-  document.getElementById("mkEq").textContent = fmt(MENU.startEq + kPnl);
-  document.getElementById("mvEq").textContent = fmt(MENU.startEq + vPnl);
+  document.getElementById("mkEq").textContent = fmt((MENU.kStartEq ?? MENU.startEq) + kPnl);
+  document.getElementById("mvEq").textContent = fmt((MENU.vStartEq ?? MENU.startEq) + vPnl);
   const mk = document.getElementById("mkPnl");
   const mv = document.getElementById("mvPnl");
   mk.textContent = sign(kPnl); mv.textContent = sign(vPnl);
