@@ -111,7 +111,7 @@
         </div>
         <canvas id="scanCanvas" class="hidden" aria-hidden="true"></canvas>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260903f — Allow camera. Hold Oasis Code-128 flat in the green strip.</p>
+        <p class="hint" id="scanHint">v20260903g — Allow camera. Hold Oasis Code-128 flat in the green strip.</p>
         <pre class="dbg" id="scanDbg">dbg: waiting…</pre>
         <button class="btn torch" id="torchBtn" disabled>Torch</button>
         <div class="row2" style="margin-top:10px">
@@ -191,7 +191,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260903f';
+const VER = 'v20260903g';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -743,26 +743,33 @@ async function zxingDecodeLoop(video) {
         ZXing.BarcodeFormat.ITF,
         ZXing.BarcodeFormat.CODABAR
       ];
-      // 1) Primary: green-strip crop @ 2x, CODE_128 only (+contrast/invert)
-      const strip = drawStrip(video, 2);
       let text = '';
-      if (strip) text = decodeWithHints(strip, fmt128);
-      // 1b) strip @ 3x if still empty (thin bars / distance)
-      if (!text) {
-        const strip3 = drawStrip(video, 3);
-        if (strip3) text = decodeWithHints(strip3, fmt128);
+      // Multi-band CROP_BANDS @ 2x then 3x with decodeVariants
+      const scales = [2, 3];
+      for (let si = 0; si < scales.length && !text; si++) {
+        const up = scales[si];
+        for (let bi = 0; bi < CROP_BANDS.length && !text; bi++) {
+          const band = CROP_BANDS[bi];
+          const info = drawStripBand(video, band, up);
+          if (!info) continue;
+          setDbg({
+            video: info.vw + 'x' + info.vh,
+            crop: info.band + ' @' + up + 'x ' + info.w + 'x' + info.h
+          });
+          text = decodeVariants(info.canvas, fmt128, 'band' + info.band + '@' + up + 'x');
+          if (!text) text = decodeVariants(info.canvas, fmtMulti, 'band-multi' + info.band + '@' + up + 'x');
+        }
       }
-      // 2) Same strip multi-format fallback
-      if (!text && strip) text = decodeWithHints(strip, fmtMulti);
-      // 3) Full-frame secondary
+      // Full-frame secondary with variants
       if (!text) {
         const full = drawFull(video, 1280);
         if (full) {
-          text = decodeWithHints(full, fmt128);
-          if (!text) text = decodeWithHints(full, fmtMulti);
+          setDbg({ crop: 'full' });
+          text = decodeVariants(full, fmt128, 'full');
+          if (!text) text = decodeVariants(full, fmtMulti, 'full-multi');
         }
       }
-      // 4) Library video-element path last resort
+      // Library video-element path last resort
       if (!text && zxingReader128) {
         try {
           const result = await zxingReader128.decodeOnceFromVideoElement(video);
@@ -778,7 +785,6 @@ async function zxingDecodeLoop(video) {
     zxingLoopTimer = setTimeout(() => zxingDecodeLoop(video), 60);
   }
 }
-
 function startNativeLoop(video) {
   if (typeof window.BarcodeDetector === 'undefined') return;
   try {
@@ -883,7 +889,7 @@ async function startScan() {
     const hasNative = typeof window.BarcodeDetector !== 'undefined';
     if (hasNative) startNativeLoop(video);
 
-    const eng = hasNative ? 'strip+contrast ZXing+BD' : 'strip+contrast ZXing';
+    const eng = hasNative ? 'multi-band ZXing+BD' : 'multi-band ZXing';
     $('scanHint').textContent = VER + ' — Camera live (' + eng + '). Hold Code-128 in the green strip.';
   } catch (e) {
     const msg = (e && (e.message || e.name || String(e))) || 'unknown';
@@ -1014,6 +1020,104 @@ $('again').onclick = async () => {
   refreshQueueCount();
   show('screen-scan');
   startScan();
+};
+
+async function decodeStillImage(imgOrCanvas) {
+  await waitForZXing(8000);
+  if (typeof ZXing === 'undefined') {
+    setDbg({ note: 'ZXing not loaded for photo test' });
+    return '';
+  }
+  const fmt128 = [ZXing.BarcodeFormat.CODE_128];
+  const fmtMulti = [
+    ZXing.BarcodeFormat.CODE_128,
+    ZXing.BarcodeFormat.CODE_39,
+    ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.UPC_A,
+    ZXing.BarcodeFormat.UPC_E,
+    ZXing.BarcodeFormat.ITF,
+    ZXing.BarcodeFormat.CODABAR
+  ];
+  let text = '';
+  const scales = [2, 3];
+  for (let si = 0; si < scales.length && !text; si++) {
+    const up = scales[si];
+    for (let bi = 0; bi < CROP_BANDS.length && !text; bi++) {
+      const band = CROP_BANDS[bi];
+      const info = drawStripBand(imgOrCanvas, band, up);
+      if (!info) continue;
+      setDbg({
+        video: info.vw + 'x' + info.vh,
+        crop: 'photo ' + info.band + ' @' + up + 'x',
+        engine: 'photo-band'
+      });
+      text = decodeVariants(info.canvas, fmt128, 'photo-band' + info.band);
+      if (!text) text = decodeVariants(info.canvas, fmtMulti, 'photo-multi' + info.band);
+    }
+  }
+  if (!text) {
+    const full = drawFull(imgOrCanvas, 1600);
+    if (full) {
+      setDbg({ crop: 'photo-full' });
+      text = decodeVariants(full, fmt128, 'photo-full');
+      if (!text) text = decodeVariants(full, fmtMulti, 'photo-full-multi');
+    }
+  }
+  return text;
+}
+
+$('photoTestBtn').onclick = () => {
+  const pick = $('photoPick');
+  if (pick) pick.click();
+};
+$('photoPick').onchange = async (ev) => {
+  const f = ev.target.files && ev.target.files[0];
+  ev.target.value = '';
+  if (!f) return;
+  $('scanErr').classList.add('hidden');
+  setDbg({ engine: 'photo', note: 'decoding still…' });
+  try {
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    await new Promise((res, rej) => {
+      img.onload = res;
+      img.onerror = rej;
+      img.src = url;
+    });
+    URL.revokeObjectURL(url);
+    const text = await decodeStillImage(img);
+    if (text) {
+      onDecoded(text, 'photo');
+    } else {
+      const msg = 'Photo: no barcode found. Try flatter lighting / closer crop.';
+      $('scanErr').textContent = msg;
+      $('scanErr').classList.remove('hidden');
+      setDbg({ note: msg });
+    }
+  } catch (e) {
+    const msg = 'Photo decode failed: ' + ((e && e.message) || e);
+    $('scanErr').textContent = msg;
+    $('scanErr').classList.remove('hidden');
+  }
+};
+$('toggleDbg').onclick = () => {
+  dbgVisible = !dbgVisible;
+  const el = $('scanDbg');
+  if (el) el.style.display = dbgVisible ? '' : 'none';
+  $('toggleDbg').textContent = dbgVisible ? 'Hide debug' : 'Show debug';
+};
+$('showTestBarcode').onclick = (ev) => {
+  ev.preventDefault();
+  const existing = document.getElementById('testBarcodeOverlay');
+  if (existing) { existing.remove(); return; }
+  const wrap = document.createElement('div');
+  wrap.id = 'testBarcodeOverlay';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+  wrap.innerHTML = '<img src="test-barcode.png?v=20260903g" alt="test barcode 00378814" style="max-width:96%;max-height:70vh;background:#fff;padding:12px;border-radius:8px">' +
+    '<p style="color:#fff;margin:12px 0 0;font:14px system-ui">00378814 / C378814 Ana Ramos — tap to close</p>';
+  wrap.onclick = () => wrap.remove();
+  document.body.appendChild(wrap);
 };
 
 $('wedge').addEventListener('keydown', (ev) => {
