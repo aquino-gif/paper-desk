@@ -191,7 +191,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260903i';
+const VER = 'v20260904b';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -217,7 +217,7 @@ let decodeCanvas = null;
 let decodeCtx = null;
 let boostCanvas = null;
 let boostCtx = null;
-const CROP_BANDS = [0.28, 0.40, 0.50, 0.60];
+const CROP_BANDS = [0.22, 0.28, 0.36, 0.48, 0.60];
 let dbg = { engine: '—', raw: '—', video: '—', crop: '—', note: '', zbar: 'N' };
 let dbgVisible = true;
 let zxingReadyPromise = null;
@@ -344,25 +344,27 @@ async function loadZBar() {
 }
 
 async function decodeWithZBar(canvas) {
-  if (!zbarApi || !canvas || !canvas.width || !canvas.height) return '';
+  if (!zbarApi || !canvas || !canvas.width || !canvas.height) return "";
   try {
-    const ctx = canvas.getContext('2d', { willReadFrequently: true }) || canvas.getContext('2d');
-    if (!ctx) return '';
+    const ctx = canvas.getContext("2d", { willReadFrequently: true }) || canvas.getContext("2d");
+    if (!ctx) return "";
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const packed = new Uint8Array(imageData.data.byteLength);
+    packed.set(imageData.data);
     let symbols = null;
-    if (zbarApi.scanImageData) {
-      symbols = await zbarApi.scanImageData(imageData);
+    if (zbarApi.scanRGBABuffer) {
+      symbols = await zbarApi.scanRGBABuffer(packed.buffer, canvas.width, canvas.height);
     }
-    if ((!symbols || !symbols.length) && zbarApi.scanRGBABuffer) {
-      symbols = await zbarApi.scanRGBABuffer(imageData.data.buffer, canvas.width, canvas.height);
+    if ((!symbols || !symbols.length) && zbarApi.scanImageData) {
+      try { symbols = await zbarApi.scanImageData({ width: canvas.width, height: canvas.height, data: packed }); } catch (e0) { symbols = null; }
     }
     if (symbols && symbols.length) {
       const s = symbols[0];
-      if (s && typeof s.decode === 'function') return s.decode();
+      if (s && typeof s.decode === "function") return s.decode();
       if (s && s.rawData != null) return String(s.rawData);
     }
   } catch (_) {}
-  return '';
+  return "";
 }
 
 async function tryZBarOnCanvas(canvas, label) {
@@ -415,6 +417,13 @@ const fmtPhone = (p) => {
   const d = digits(p);
   if (d.length!==10) return p||'';
   return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+};
+const fmtDob = (d) => {
+  const s = String(d||'').trim();
+  if (!s) return '';
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[2] + '/' + m[3] + '/' + m[1];
+  return s;
 };
 
 function queueLen() {
@@ -1094,7 +1103,7 @@ function openMatch(c) {
   current = c;
   $('matchName').textContent = c.name || 'Unknown';
   $('matchCase').textContent = c.case || '—';
-  $('matchDob').textContent = c.dob || '—';
+  $('matchDob').textContent = fmtDob(c.dob) || '—';
   $('matchAddr').textContent = c.address || '—';
   $('matchPhone').textContent = c.phone ? fmtPhone(c.phone) : 'No phone on file';
   const ph = $('matchPhoto');
@@ -1186,7 +1195,7 @@ $('phoneSearch').onclick = () => {
   hits.slice(0,8).forEach(h => {
     const b = document.createElement('button');
     b.className = 'match';
-    b.innerHTML = '<b>'+ (h.name||'Unknown') +'</b><br>Case '+h.case+' · '+(h.dob||'');
+    b.innerHTML = '<b>'+ (h.name||'Unknown') +'</b><br>Case '+h.case+' · '+(fmtDob(h.dob)||'');
     b.onclick = () => openMatch(h);
     $('phoneList').appendChild(b);
   });
@@ -1340,7 +1349,7 @@ $('showTestBarcode').onclick = (ev) => {
   const wrap = document.createElement('div');
   wrap.id = 'testBarcodeOverlay';
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
-  wrap.innerHTML = '<img src="test-barcode.png?v=20260903i" alt="test barcode 00378814" style="max-width:96%;max-height:70vh;background:#fff;padding:12px;border-radius:8px">' +
+  wrap.innerHTML = '<img src="test-barcode.png?v=20260904a" alt="test barcode 00378814" style="max-width:96%;max-height:70vh;background:#fff;padding:12px;border-radius:8px">' +
     '<p style="color:#fff;margin:12px 0 0;font:14px system-ui">00378814 / C378814 Ana Ramos — tap to close</p>';
   wrap.onclick = () => wrap.remove();
   document.body.appendChild(wrap);
