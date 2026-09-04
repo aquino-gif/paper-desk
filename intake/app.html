@@ -103,7 +103,7 @@
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Point the green strip at the Oasis Code-128. Hard refresh ?v=20260903f if camera was stuck.</p>
+        <p class="sub">Point the green strip at the Oasis Code-128. Hard refresh ?v=20260903h if camera was stuck. ZBar WASM primary.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
@@ -111,7 +111,7 @@
         </div>
         <canvas id="scanCanvas" class="hidden" aria-hidden="true"></canvas>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260903g — Allow camera. Hold Oasis Code-128 flat in the green strip.</p>
+        <p class="hint" id="scanHint">v20260903h — Allow camera. Hold Oasis Code-128 flat in the green strip.</p>
         <pre class="dbg" id="scanDbg">dbg: waiting…</pre>
         <button class="btn torch" id="torchBtn" disabled>Torch</button>
         <div class="row2" style="margin-top:10px">
@@ -191,7 +191,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260903g';
+const VER = 'v20260903h';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -218,9 +218,16 @@ let decodeCtx = null;
 let boostCanvas = null;
 let boostCtx = null;
 const CROP_BANDS = [0.20, 0.28, 0.40];
-let dbg = { engine: '—', raw: '—', video: '—', crop: '—', note: '' };
+let dbg = { engine: '—', raw: '—', video: '—', crop: '—', note: '', zbar: 'N' };
 let dbgVisible = true;
 let zxingReadyPromise = null;
+let zbarApi = null;
+let zbarLoaded = false;
+let zbarLoadError = '';
+let zbarLoadPromise = null;
+const ZBAR_CDN = 'https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.11.0/dist';
+const ZBAR_LOCAL = './vendor/zbar-wasm';
+const POLYFILL_CDN = './vendor/barcode-detector-polyfill';
 
 const $ = (id) => document.getElementById(id);
 const show = (id) => {
@@ -244,12 +251,139 @@ function waitForZXing(timeoutMs) {
   });
   return zxingReadyPromise;
 }
+
+function polyfillBarcodeDetector(Polyfill) {
+  if (!Polyfill) return;
+  try {
+    if (typeof window.BarcodeDetector !== 'undefined') return;
+  } catch (_) {}
+  try { window.BarcodeDetector = Polyfill; } catch (_) {}
+}
+
+async function loadZBar() {
+  if (zbarLoaded && zbarApi) return true;
+  if (zbarLoadPromise) return zbarLoadPromise;
+  zbarLoadPromise = (async () => {
+    const tryUrls = [];
+    if (typeof ZBAR_CDN === 'string' && ZBAR_CDN) tryUrls.push(ZBAR_CDN);
+    if (typeof ZBAR_LOCAL === 'string' && ZBAR_LOCAL) tryUrls.push(ZBAR_LOCAL);
+    let lastErr = null;
+    for (let ui = 0; ui < tryUrls.length; ui++) {
+      const base = tryUrls[ui].replace(/\/$/, '');
+      const candidates = [base + '/index.mjs', base + '/index.js', base + '/main.mjs', base + '/main.js'];
+      let mod = null;
+      let lastImportErr = null;
+      for (let ci = 0; ci < candidates.length && !mod; ci++) {
+        try {
+          mod = await import(candidates[ci]);
+        } catch (ie) {
+          lastImportErr = ie;
+        }
+      }
+      if (!mod) {
+        lastErr = lastImportErr || lastErr;
+        continue;
+      }
+      try {
+        if (mod.setModuleArgs) {
+          mod.setModuleArgs({
+            locateFile: (filename) => base + '/' + filename
+          });
+        }
+        zbarApi = mod;
+        try {
+          const pfBase = (typeof POLYFILL_CDN === 'string' ? POLYFILL_CDN : './vendor/barcode-detector-polyfill').replace(/\/$/, '');
+          const pf = await import(pfBase + '/main.js');
+          if (pf && pf.BarcodeDetectorPolyfill) {
+            polyfillBarcodeDetector(pf.BarcodeDetectorPolyfill);
+          }
+        } catch (pe) {
+          console.warn('polyfill optional load failed', pe);
+        }
+        if (mod.getInstance) await mod.getInstance();
+        zbarLoaded = true;
+        zbarLoadError = '';
+        setDbg({ note: 'ZBar WASM ready from ' + base });
+        return true;
+      } catch (e) {
+        lastErr = e;
+        console.warn('ZBar load failed from', base, e);
+      }
+    }
+    zbarLoaded = false;
+    zbarLoadError = (lastErr && (lastErr.message || lastErr.name)) || String(lastErr || 'unknown');
+    const msg = 'ZBar load failed: ' + zbarLoadError;
+    const errEl = $('scanErr');
+    if (errEl) {
+      errEl.textContent = msg;
+      errEl.classList.remove('hidden');
+    }
+    setDbg({ note: msg });
+    return false;
+  })();
+  return zbarLoadPromise;
+}
+
+async function decodeWithZBar(canvas) {
+  if (!zbarApi || !canvas || !canvas.width || !canvas.height) return '';
+  try {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true }) || canvas.getContext('2d');
+    if (!ctx) return '';
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let symbols = null;
+    if (zbarApi.scanImageData) {
+      symbols = await zbarApi.scanImageData(imageData);
+    }
+    if ((!symbols || !symbols.length) && zbarApi.scanRGBABuffer) {
+      symbols = await zbarApi.scanRGBABuffer(imageData.data.buffer, canvas.width, canvas.height);
+    }
+    if (symbols && symbols.length) {
+      const s = symbols[0];
+      if (s && typeof s.decode === 'function') return s.decode();
+      if (s && s.rawData != null) return String(s.rawData);
+    }
+  } catch (_) {}
+  return '';
+}
+
+async function tryZBarOnCanvas(canvas, label) {
+  if (!zbarLoaded || !zbarApi || !canvas) return '';
+  setDbg({ engine: (label || 'zbar') });
+  let t = await decodeWithZBar(canvas);
+  if (t) return t;
+  try {
+    t = await decodeWithZBar(contrastBoost(canvas));
+    if (t) {
+      setDbg({ engine: (label || 'zbar') + '/boost' });
+      return t;
+    }
+  } catch (_) {}
+  return '';
+}
+
+async function tryNativeBDOnCanvas(canvas, label) {
+  if (!nativeDetector || !canvas) return '';
+  try {
+    const codes = await nativeDetector.detect(canvas);
+    if (codes && codes.length) {
+      const raw = codes[0].rawValue || '';
+      if (raw) {
+        setDbg({ engine: label || 'BarcodeDetector' });
+        return raw;
+      }
+    }
+  } catch (_) {}
+  return '';
+}
+
 function setDbg(partial) {
   Object.assign(dbg, partial || {});
   const el = document.getElementById("scanDbg");
   if (!el) return;
+  const zbarYN = zbarLoaded ? 'Y' : (zbarLoadError ? ('N (' + zbarLoadError + ')') : 'N');
   el.textContent =
     VER + ' dbg\n' +
+    'ZBar loaded: ' + zbarYN + '\n' +
     'engine: ' + (dbg.engine || '—') + '\n' +
     'raw: ' + (dbg.raw || '—') + '\n' +
     'video: ' + (dbg.video || '—') + '\n' +
@@ -732,8 +866,9 @@ async function zxingDecodeLoop(video) {
   if (!scanActive) return;
   try {
     if (video.readyState >= 2 && video.videoWidth > 0) {
-      const fmt128 = [ZXing.BarcodeFormat.CODE_128];
-      const fmtMulti = [
+      const hasZXing = (typeof ZXing !== 'undefined' && ZXing.BarcodeFormat);
+      const fmt128 = hasZXing ? [ZXing.BarcodeFormat.CODE_128] : null;
+      const fmtMulti = hasZXing ? [
         ZXing.BarcodeFormat.CODE_128,
         ZXing.BarcodeFormat.CODE_39,
         ZXing.BarcodeFormat.EAN_13,
@@ -742,9 +877,9 @@ async function zxingDecodeLoop(video) {
         ZXing.BarcodeFormat.UPC_E,
         ZXing.BarcodeFormat.ITF,
         ZXing.BarcodeFormat.CODABAR
-      ];
+      ] : null;
       let text = '';
-      // Multi-band CROP_BANDS @ 2x then 3x with decodeVariants
+      let engineHit = '';
       const scales = [2, 3];
       for (let si = 0; si < scales.length && !text; si++) {
         const up = scales[si];
@@ -756,27 +891,46 @@ async function zxingDecodeLoop(video) {
             video: info.vw + 'x' + info.vh,
             crop: info.band + ' @' + up + 'x ' + info.w + 'x' + info.h
           });
-          text = decodeVariants(info.canvas, fmt128, 'band' + info.band + '@' + up + 'x');
-          if (!text) text = decodeVariants(info.canvas, fmtMulti, 'band-multi' + info.band + '@' + up + 'x');
+          // 1) ZBar primary
+          text = await tryZBarOnCanvas(info.canvas, 'zbar-band' + info.band + '@' + up + 'x');
+          if (text) { engineHit = 'zbar'; break; }
+          // 2) native / polyfill BarcodeDetector
+          text = await tryNativeBDOnCanvas(info.canvas, 'BD-band' + info.band);
+          if (text) { engineHit = 'BarcodeDetector'; break; }
+          // 3) ZXing last
+          if (hasZXing) {
+            text = decodeVariants(info.canvas, fmt128, 'zxing-band' + info.band + '@' + up + 'x');
+            if (!text) text = decodeVariants(info.canvas, fmtMulti, 'zxing-multi' + info.band + '@' + up + 'x');
+            if (text) { engineHit = 'zxing'; break; }
+          }
         }
       }
-      // Full-frame secondary with variants
+      // Full-frame secondary
       if (!text) {
         const full = drawFull(video, 1280);
         if (full) {
           setDbg({ crop: 'full' });
-          text = decodeVariants(full, fmt128, 'full');
-          if (!text) text = decodeVariants(full, fmtMulti, 'full-multi');
+          text = await tryZBarOnCanvas(full, 'zbar-full');
+          if (text) engineHit = 'zbar';
+          if (!text) {
+            text = await tryNativeBDOnCanvas(full, 'BD-full');
+            if (text) engineHit = 'BarcodeDetector';
+          }
+          if (!text && hasZXing) {
+            text = decodeVariants(full, fmt128, 'zxing-full');
+            if (!text) text = decodeVariants(full, fmtMulti, 'zxing-full-multi');
+            if (text) engineHit = 'zxing';
+          }
         }
       }
-      // Library video-element path last resort
-      if (!text && zxingReader128) {
+      if (!text && hasZXing && zxingReader128) {
         try {
           const result = await zxingReader128.decodeOnceFromVideoElement(video);
           text = textFromResult(result);
+          if (text) engineHit = 'zxing-video';
         } catch (_) {}
       }
-      if (text && scanActive) onDecoded(text);
+      if (text && scanActive) onDecoded(text, engineHit || 'live');
     }
   } catch (_) {
     /* keep looping */
@@ -785,6 +939,7 @@ async function zxingDecodeLoop(video) {
     zxingLoopTimer = setTimeout(() => zxingDecodeLoop(video), 60);
   }
 }
+
 function startNativeLoop(video) {
   if (typeof window.BarcodeDetector === 'undefined') return;
   try {
@@ -848,49 +1003,64 @@ async function startScan() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new Error('Camera API unavailable (need HTTPS)');
     }
-    if (typeof ZXing === 'undefined' || !ZXing.BrowserMultiFormatReader) {
-      throw new Error('ZXing library failed to load');
+
+    // ZBar WASM primary (jsdelivr, local vendor fallback)
+    const zOk = await loadZBar();
+    if (!zOk) {
+      // surface already in red via loadZBar; still allow BD/ZXing fallbacks
     }
+    await waitForZXing(2500);
 
     stopScan();
     scanActive = true;
 
     const video = $('scanVideo');
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
+    video.muted = true;
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: {
         facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
       }
     });
     videoTrack = mediaStream.getVideoTracks()[0] || null;
     video.srcObject = mediaStream;
     video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
     video.muted = true;
     await video.play();
     await setupTorchButton();
 
-    const fmt128 = [ZXing.BarcodeFormat.CODE_128];
-    const fmtMulti = [
-      ZXing.BarcodeFormat.CODE_128,
-      ZXing.BarcodeFormat.CODE_39,
-      ZXing.BarcodeFormat.EAN_13,
-      ZXing.BarcodeFormat.EAN_8,
-      ZXing.BarcodeFormat.UPC_A,
-      ZXing.BarcodeFormat.UPC_E,
-      ZXing.BarcodeFormat.ITF,
-      ZXing.BarcodeFormat.CODABAR
-    ];
-    zxingReader128 = new ZXing.BrowserMultiFormatReader(buildHints(fmt128));
-    zxingReaderMulti = new ZXing.BrowserMultiFormatReader(buildHints(fmtMulti));
-    zxingDecodeLoop(video);
+    if (typeof ZXing !== 'undefined' && ZXing.BrowserMultiFormatReader) {
+      const fmt128 = [ZXing.BarcodeFormat.CODE_128];
+      const fmtMulti = [
+        ZXing.BarcodeFormat.CODE_128,
+        ZXing.BarcodeFormat.CODE_39,
+        ZXing.BarcodeFormat.EAN_13,
+        ZXing.BarcodeFormat.EAN_8,
+        ZXing.BarcodeFormat.UPC_A,
+        ZXing.BarcodeFormat.UPC_E,
+        ZXing.BarcodeFormat.ITF,
+        ZXing.BarcodeFormat.CODABAR
+      ];
+      zxingReader128 = new ZXing.BrowserMultiFormatReader(buildHints(fmt128));
+      zxingReaderMulti = new ZXing.BrowserMultiFormatReader(buildHints(fmtMulti));
+    }
 
     const hasNative = typeof window.BarcodeDetector !== 'undefined';
     if (hasNative) startNativeLoop(video);
+    zxingDecodeLoop(video);
 
-    const eng = hasNative ? 'multi-band ZXing+BD' : 'multi-band ZXing';
+    const engParts = [];
+    if (zbarLoaded) engParts.push('zbar');
+    if (hasNative) engParts.push('BD');
+    if (zxingReader128) engParts.push('zxing');
+    const eng = engParts.length ? engParts.join('+') : 'no-decoder';
     $('scanHint').textContent = VER + ' — Camera live (' + eng + '). Hold Code-128 in the green strip.';
+    setDbg({ note: 'live engines: ' + eng + ' | ZBar ' + (zbarLoaded ? 'Y' : 'N') });
   } catch (e) {
     const msg = (e && (e.message || e.name || String(e))) || 'unknown';
     $('scanErr').textContent = 'Camera: ' + msg + '. Tap Retry, or emergency Type # / phone. HTTPS + Allow Camera required.';
@@ -1023,13 +1193,17 @@ $('again').onclick = async () => {
 };
 
 async function decodeStillImage(imgOrCanvas) {
-  await waitForZXing(8000);
-  if (typeof ZXing === 'undefined') {
-    setDbg({ note: 'ZXing not loaded for photo test' });
-    return '';
+  const zOk = await loadZBar();
+  if (!zOk) {
+    const msg = 'ZBar load failed: ' + (zbarLoadError || 'unknown');
+    $('scanErr').textContent = msg;
+    $('scanErr').classList.remove('hidden');
+    setDbg({ note: msg });
   }
-  const fmt128 = [ZXing.BarcodeFormat.CODE_128];
-  const fmtMulti = [
+  await waitForZXing(8000);
+  const hasZXing = (typeof ZXing !== 'undefined' && ZXing.BarcodeFormat);
+  const fmt128 = hasZXing ? [ZXing.BarcodeFormat.CODE_128] : null;
+  const fmtMulti = hasZXing ? [
     ZXing.BarcodeFormat.CODE_128,
     ZXing.BarcodeFormat.CODE_39,
     ZXing.BarcodeFormat.EAN_13,
@@ -1038,8 +1212,19 @@ async function decodeStillImage(imgOrCanvas) {
     ZXing.BarcodeFormat.UPC_E,
     ZXing.BarcodeFormat.ITF,
     ZXing.BarcodeFormat.CODABAR
-  ];
+  ] : null;
+
+  // Ensure BD available (native or polyfill from loadZBar)
+  if (!nativeDetector && typeof window.BarcodeDetector !== 'undefined') {
+    try {
+      nativeDetector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e'] });
+    } catch (_) {
+      try { nativeDetector = new BarcodeDetector(); } catch (e2) {}
+    }
+  }
+
   let text = '';
+  let engineHit = '';
   const scales = [2, 3];
   for (let si = 0; si < scales.length && !text; si++) {
     const up = scales[si];
@@ -1050,20 +1235,37 @@ async function decodeStillImage(imgOrCanvas) {
       setDbg({
         video: info.vw + 'x' + info.vh,
         crop: 'photo ' + info.band + ' @' + up + 'x',
-        engine: 'photo-band'
+        engine: 'photo'
       });
-      text = decodeVariants(info.canvas, fmt128, 'photo-band' + info.band);
-      if (!text) text = decodeVariants(info.canvas, fmtMulti, 'photo-multi' + info.band);
+      text = await tryZBarOnCanvas(info.canvas, 'zbar-photo' + info.band);
+      if (text) { engineHit = 'zbar'; break; }
+      text = await tryNativeBDOnCanvas(info.canvas, 'BD-photo');
+      if (text) { engineHit = 'BarcodeDetector'; break; }
+      if (hasZXing) {
+        text = decodeVariants(info.canvas, fmt128, 'zxing-photo' + info.band);
+        if (!text) text = decodeVariants(info.canvas, fmtMulti, 'zxing-photo-multi' + info.band);
+        if (text) { engineHit = 'zxing'; break; }
+      }
     }
   }
   if (!text) {
     const full = drawFull(imgOrCanvas, 1600);
     if (full) {
       setDbg({ crop: 'photo-full' });
-      text = decodeVariants(full, fmt128, 'photo-full');
-      if (!text) text = decodeVariants(full, fmtMulti, 'photo-full-multi');
+      text = await tryZBarOnCanvas(full, 'zbar-photo-full');
+      if (text) engineHit = 'zbar';
+      if (!text) {
+        text = await tryNativeBDOnCanvas(full, 'BD-photo-full');
+        if (text) engineHit = 'BarcodeDetector';
+      }
+      if (!text && hasZXing) {
+        text = decodeVariants(full, fmt128, 'zxing-photo-full');
+        if (!text) text = decodeVariants(full, fmtMulti, 'zxing-photo-full-multi');
+        if (text) engineHit = 'zxing';
+      }
     }
   }
+  if (text) setDbg({ engine: engineHit || 'photo' });
   return text;
 }
 
@@ -1114,7 +1316,7 @@ $('showTestBarcode').onclick = (ev) => {
   const wrap = document.createElement('div');
   wrap.id = 'testBarcodeOverlay';
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
-  wrap.innerHTML = '<img src="test-barcode.png?v=20260903g" alt="test barcode 00378814" style="max-width:96%;max-height:70vh;background:#fff;padding:12px;border-radius:8px">' +
+  wrap.innerHTML = '<img src="test-barcode.png?v=20260903h" alt="test barcode 00378814" style="max-width:96%;max-height:70vh;background:#fff;padding:12px;border-radius:8px">' +
     '<p style="color:#fff;margin:12px 0 0;font:14px system-ui">00378814 / C378814 Ana Ramos — tap to close</p>';
   wrap.onclick = () => wrap.remove();
   document.body.appendChild(wrap);
