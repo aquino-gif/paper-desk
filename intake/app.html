@@ -16,7 +16,12 @@
   main { flex:1; padding:0 16px 24px; }
   h1 { font-size:22px; margin:8px 0 4px; }
   .sub { color:var(--muted); font-size:14px; margin:0 0 12px; }
-  #reader { width:100%; border-radius:14px; overflow:hidden; background:#000; min-height:280px; }
+  #reader { width:100%; border-radius:14px; overflow:hidden; background:#000; min-height:260px; position:relative; }
+  .scan-guide {
+    pointer-events:none; position:absolute; left:8%; right:8%; top:42%; height:56px;
+    border:2px solid rgba(26,159,75,.9); border-radius:8px; z-index:2;
+    box-shadow:0 0 0 9999px rgba(0,0,0,.35);
+  }
   .btn { display:block; width:100%; border:0; border-radius:12px; padding:14px 16px; font-size:16px; font-weight:700; cursor:pointer; }
   .btn.primary { background:var(--g); color:#fff; }
   .btn.secondary { background:#fff; color:var(--g); border:2px solid var(--g); }
@@ -32,12 +37,16 @@
   input[type=tel], input[type=text], input[type=password] {
     width:100%; font-size:18px; padding:14px; border:1px solid #ccc; border-radius:12px; margin:8px 0 12px;
   }
+  #wedge {
+    position:absolute; left:-9999px; width:1px; height:1px; opacity:0;
+  }
   .ok { text-align:center; padding:28px 8px; }
   .ok .check { width:72px; height:72px; border-radius:50%; background:var(--g2); color:var(--g); display:flex; align-items:center; justify-content:center; font-size:36px; margin:0 auto 12px; }
   .hidden { display:none !important; }
   .err { color:var(--warn); font-size:14px; margin:8px 0; }
   .list button.match { text-align:left; width:100%; background:#fff; border:1px solid #ddd; border-radius:12px; padding:12px; margin:8px 0; cursor:pointer; }
   .gate { padding:40px 16px; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
 </style>
 </head>
 <body>
@@ -56,17 +65,32 @@
       <span class="staff" id="staffLabel">Miami Bethany</span>
     </header>
     <main>
-      <!-- SCAN -->
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Camera is live. Point at the Oasis card.</p>
-        <div id="reader"></div>
+        <p class="sub">Camera or USB/Bluetooth scanner. Point at the Oasis card.</p>
+        <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
+        <div id="reader" style="position:relative">
+          <div class="scan-guide" id="scanGuide"></div>
+        </div>
         <p class="err hidden" id="scanErr"></p>
-        <button class="btn secondary" id="toPhone" style="margin-top:14px">Search by phone</button>
-        <p class="hint">Only if they have no card — tap to type phone</p>
+        <p class="hint" id="scanHint">Allow camera when asked. Hold card steady in the green box.</p>
+        <div class="row2">
+          <button class="btn secondary" id="retryCam">Retry camera</button>
+          <button class="btn secondary" id="toManual">Type case #</button>
+        </div>
+        <button class="btn secondary" id="toPhone" style="margin-top:10px">Search by phone</button>
+        <p class="hint">No card? Search by phone or type the case number</p>
       </section>
 
-      <!-- PHONE -->
+      <section id="screen-manual" class="hidden">
+        <h1>Type case #</h1>
+        <p class="sub">Example: C378814 or 00378814</p>
+        <input id="caseInput" type="text" inputmode="text" placeholder="C378814" autocomplete="off" autocapitalize="characters">
+        <button class="btn primary" id="caseSearch">Look up</button>
+        <button class="btn ghost" id="caseBack">Back to scan</button>
+        <p class="err hidden" id="caseErr"></p>
+      </section>
+
       <section id="screen-phone" class="hidden">
         <h1>Search by phone</h1>
         <p class="sub">No ID? Look up the returning client.</p>
@@ -77,7 +101,6 @@
         <div id="phoneList" class="list"></div>
       </section>
 
-      <!-- MATCH -->
       <section id="screen-match" class="hidden">
         <h1>Confirm match</h1>
         <div class="card">
@@ -94,7 +117,6 @@
         <button class="btn ghost" id="notThem">Not them</button>
       </section>
 
-      <!-- DONE -->
       <section id="screen-done" class="hidden">
         <div class="ok">
           <div class="check">✓</div>
@@ -112,13 +134,17 @@ const PASS = 'Pedro@2008!';
 let cases = [];
 let scanner = null;
 let current = null;
+let lastBad = '';
+let lastBadAt = 0;
+let scanning = false;
 
 const $ = (id) => document.getElementById(id);
 const show = (id) => {
-  ['screen-scan','screen-phone','screen-match','screen-done'].forEach(s => $(s).classList.add('hidden'));
+  ['screen-scan','screen-phone','screen-match','screen-done','screen-manual'].forEach(s => $(s).classList.add('hidden'));
   $(id).classList.remove('hidden');
+  if (id === 'screen-scan') focusWedge();
 };
-const digits = (p) => (p||'').replace(/\D/g,'') .replace(/^1(\d{10})$/,'$1');
+const digits = (p) => (p||'').replace(/\D/g,'').replace(/^1(\d{10})$/,'$1');
 const fmtPhone = (p) => {
   const d = digits(p);
   if (d.length!==10) return p||'';
@@ -127,37 +153,116 @@ const fmtPhone = (p) => {
 
 function findByBarcode(raw) {
   const t = String(raw||'').trim();
+  if (!t) return null;
   const num = t.replace(/\D/g,'');
   const pad = num.padStart(8,'0').slice(-8);
-  return cases.find(c => c.barcode === pad || c.barcode === num || c.case === t || c.case === ('C'+num.replace(/^0+/,'')) || c.case === ('C'+pad.replace(/^0+/,'')));
+  const stripped = num.replace(/^0+/,'');
+  return cases.find(c =>
+    c.barcode === pad ||
+    c.barcode === num ||
+    c.barcode === stripped.padStart(8,'0') ||
+    c.case === t ||
+    c.case === t.toUpperCase() ||
+    c.case === ('C'+stripped) ||
+    c.case === ('C'+pad.replace(/^0+/,'')) ||
+    String(c.case||'').replace(/^C/i,'') === stripped ||
+    String(c.case||'').replace(/^C/i,'') === pad.replace(/^0+/,'')
+  ) || null;
 }
 function findByPhone(p) {
   const d = digits(p);
   return cases.filter(c => c.phone === d);
 }
 
+function onDecoded(decoded) {
+  const hit = findByBarcode(decoded);
+  if (hit) {
+    stopScan();
+    openMatch(hit);
+    return;
+  }
+  const now = Date.now();
+  if (decoded === lastBad && now - lastBadAt < 2500) return;
+  lastBad = decoded;
+  lastBadAt = now;
+  $('scanErr').textContent = 'Scanned ' + decoded + ' — not in local Oasis snapshot.';
+  $('scanErr').classList.remove('hidden');
+}
+
+function focusWedge() {
+  const w = $('wedge');
+  if (!w) return;
+  w.value = '';
+  try { w.focus({ preventScroll: true }); } catch (_) { w.focus(); }
+}
+
+async function pickCameraId() {
+  try {
+    const cams = await Html5Qrcode.getCameras();
+    if (!cams || !cams.length) return { facingMode: 'environment' };
+    const back = cams.find(c => /back|rear|environment|trás|atras/i.test(c.label||''));
+    return back ? back.id : cams[cams.length - 1].id;
+  } catch (_) {
+    return { facingMode: 'environment' };
+  }
+}
+
 async function startScan() {
   $('scanErr').classList.add('hidden');
-  if (scanner) return;
-  scanner = new Html5Qrcode('reader');
-  try {
-    await scanner.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 280, height: 140 }, aspectRatio: 1.6 },
-      (decoded) => {
-        const hit = findByBarcode(decoded);
-        if (hit) {
-          stopScan();
-          openMatch(hit);
-        } else {
-          $('scanErr').textContent = 'Scanned ' + decoded + ' — not in local Oasis snapshot.';
-          $('scanErr').classList.remove('hidden');
-        }
-      }
-    );
-  } catch (e) {
-    $('scanErr').textContent = 'Camera blocked or unavailable. Use Search by phone.';
+  focusWedge();
+  if (scanner || scanning) return;
+  if (typeof Html5Qrcode === 'undefined') {
+    $('scanErr').textContent = 'Scanner library failed to load. Use Type case # or Search by phone.';
     $('scanErr').classList.remove('hidden');
+    return;
+  }
+  scanning = true;
+  const formats = [
+    Html5QrcodeSupportedFormats.CODE_128,
+    Html5QrcodeSupportedFormats.CODE_39,
+    Html5QrcodeSupportedFormats.CODE_93,
+    Html5QrcodeSupportedFormats.CODABAR,
+    Html5QrcodeSupportedFormats.EAN_13,
+    Html5QrcodeSupportedFormats.EAN_8,
+    Html5QrcodeSupportedFormats.UPC_A,
+    Html5QrcodeSupportedFormats.UPC_E,
+    Html5QrcodeSupportedFormats.ITF,
+    Html5QrcodeSupportedFormats.QR_CODE
+  ];
+  try {
+    scanner = new Html5Qrcode('reader', {
+      formatsToSupport: formats,
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+      verbose: false
+    });
+    const cam = await pickCameraId();
+    const boxW = Math.min(320, Math.floor(($('reader').clientWidth || 320) * 0.88));
+    await scanner.start(
+      cam,
+      {
+        fps: 12,
+        qrbox: { width: boxW, height: Math.max(80, Math.floor(boxW * 0.32)) },
+        aspectRatio: 1.777,
+        disableFlip: false
+      },
+      onDecoded
+    );
+    $('scanHint').textContent = 'Camera live. Hold Oasis barcode in the green box (or use a USB scanner).';
+    // guide sits over video; keep it
+    if (!$('scanGuide')) {
+      const g = document.createElement('div');
+      g.className = 'scan-guide';
+      g.id = 'scanGuide';
+      $('reader').appendChild(g);
+    }
+  } catch (e) {
+    const msg = (e && (e.message || e.name || String(e))) || 'unknown';
+    $('scanErr').textContent = 'Camera: ' + msg + '. Tap Retry camera, or use Type case # / phone. HTTPS + Allow Camera required.';
+    $('scanErr').classList.remove('hidden');
+    try { if (scanner) { await scanner.clear(); } } catch (_) {}
+    scanner = null;
+  } finally {
+    scanning = false;
   }
 }
 async function stopScan() {
@@ -219,6 +324,31 @@ $('gateGo').onclick = async () => {
   startScan();
 };
 
+$('retryCam').onclick = async () => {
+  await stopScan();
+  await startScan();
+};
+$('toManual').onclick = async () => {
+  await stopScan();
+  $('caseErr').classList.add('hidden');
+  $('caseInput').value = '';
+  show('screen-manual');
+  setTimeout(() => $('caseInput').focus(), 50);
+};
+$('caseBack').onclick = async () => {
+  show('screen-scan');
+  startScan();
+};
+$('caseSearch').onclick = () => {
+  const hit = findByBarcode($('caseInput').value);
+  if (!hit) {
+    $('caseErr').textContent = 'No match for that case # in local Oasis snapshot.';
+    $('caseErr').classList.remove('hidden');
+    return;
+  }
+  openMatch(hit);
+};
+
 $('toPhone').onclick = async () => {
   await stopScan();
   $('phoneErr').classList.add('hidden');
@@ -267,6 +397,28 @@ $('again').onclick = async () => {
   show('screen-scan');
   startScan();
 };
+
+// Hardware / keyboard-wedge scanners dump digits then Enter
+$('wedge').addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Enter') return;
+  ev.preventDefault();
+  const v = $('wedge').value.trim();
+  $('wedge').value = '';
+  if (v) onDecoded(v);
+});
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && !$('app').classList.contains('hidden') && !$('screen-scan').classList.contains('hidden')) {
+    focusWedge();
+  }
+});
+// Keep wedge focused while on scan screen (USB scanners need a focused input)
+setInterval(() => {
+  if ($('app').classList.contains('hidden')) return;
+  if ($('screen-scan').classList.contains('hidden')) return;
+  const a = document.activeElement;
+  if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'BUTTON') && a.id !== 'wedge') return;
+  if (a !== $('wedge')) focusWedge();
+}, 1200);
 </script>
 </body>
 </html>
