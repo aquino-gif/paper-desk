@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Backup / queue — Miami Bethany</title>
+<style>
+  :root { --g:#1a9f4b; --g2:#e8f7ee; --ink:#111; --muted:#666; --warn:#c0392b; --o:#d35400; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif; color:var(--ink); background:#f7f7f7; }
+  .wrap { max-width:560px; margin:0 auto; min-height:100vh; background:#fff; display:flex; flex-direction:column; }
+  header { padding:14px 16px 8px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  .badge { background:#eef; color:#335; font-weight:700; font-size:12px; padding:6px 10px; border-radius:999px; letter-spacing:.04em; }
+  .nav a { font-size:13px; font-weight:700; color:var(--g); text-decoration:none; margin-left:10px; }
+  main { flex:1; padding:0 16px 32px; }
+  h1 { font-size:22px; margin:8px 0 4px; }
+  .sub { color:var(--muted); font-size:14px; margin:0 0 12px; line-height:1.4; }
+  .counts { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:12px 0; }
+  .stat { border:1px solid #e5e5e5; border-radius:12px; padding:12px; text-align:center; }
+  .stat b { display:block; font-size:28px; font-variant-numeric:tabular-nums; }
+  .stat span { font-size:12px; color:var(--muted); }
+  .btn { display:block; width:100%; border:0; border-radius:12px; padding:14px 16px; font-size:15px; font-weight:700; cursor:pointer; }
+  .btn.primary { background:var(--g); color:#fff; }
+  .btn.secondary { background:#fff; color:var(--g); border:2px solid var(--g); }
+  .btn.ghost { background:#eee; color:#333; }
+  .btn.danger { background:#fff; color:var(--warn); border:2px solid var(--warn); }
+  .btn + .btn { margin-top:8px; }
+  .btnrow { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:8px 0; }
+  .btnrow .btn { margin-top:0; }
+  .hidden { display:none !important; }
+  .err { color:var(--warn); font-size:14px; margin:8px 0; }
+  .okmsg { color:var(--g); font-size:14px; margin:8px 0; }
+  .gate { padding:40px 16px; }
+  input[type=password] {
+    width:100%; font-size:18px; padding:14px; border:1px solid #ccc; border-radius:12px; margin:8px 0 12px;
+  }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid #eee; vertical-align:top; }
+  th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .empty { text-align:center; color:var(--muted); padding:24px 8px; font-size:14px; }
+  .flag { font-size:11px; background:var(--g2); color:var(--g); padding:2px 6px; border-radius:6px; font-weight:700; }
+  .mode { font-size:11px; color:var(--muted); }
+  #copyBox { width:100%; min-height:80px; font-size:12px; font-family:ui-monospace,monospace; padding:10px; border:1px solid #ddd; border-radius:10px; margin-top:8px; }
+  .danger-zone { margin-top:24px; padding:14px; border:1px dashed #f5c6c6; border-radius:12px; background:#fffafa; }
+  .danger-zone h2 { font-size:15px; margin:0 0 8px; color:var(--warn); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="gate" class="gate">
+    <h1>Backup / queue</h1>
+    <p class="sub">Staff only. Offline desk backup for pantry visits.</p>
+    <input id="pass" type="password" placeholder="Passcode" autocomplete="current-password">
+    <button class="btn primary" id="gateGo">Open</button>
+    <p class="err hidden" id="gateErr">Wrong passcode</p>
+  </div>
+
+  <div id="app" class="hidden">
+    <header>
+      <span class="badge">BACKUP</span>
+      <div class="nav">
+        <a href="app.html">Returning</a>
+        <a href="new.html">New</a>
+      </div>
+    </header>
+    <main>
+      <h1>Desk queue</h1>
+      <p class="sub">Works fully offline from this device. Export before clearing. Full history stays in backup until you clear it.</p>
+
+      <div class="counts">
+        <div class="stat"><b id="qCount">0</b><span>Active queue<br><code>mb-pantry-queue</code></span></div>
+        <div class="stat"><b id="bCount">0</b><span>Full backup<br><code>mb-pantry-backup</code></span></div>
+      </div>
+
+      <div class="btnrow">
+        <button class="btn primary" id="dlCsv">Download CSV</button>
+        <button class="btn secondary" id="dlJson">Download JSON</button>
+      </div>
+      <button class="btn secondary" id="dlFull">Download full backup JSON</button>
+      <button class="btn ghost" id="copyText">Copy text</button>
+      <button class="btn ghost" id="markExported">Mark exported to Oasis</button>
+      <p class="okmsg hidden" id="msg"></p>
+      <p class="err hidden" id="err"></p>
+      <textarea id="copyBox" class="hidden" readonly></textarea>
+
+      <h2 style="font-size:16px;margin:20px 0 4px">Queue rows</h2>
+      <p class="sub" style="margin-bottom:0">Time · mode · case · name · phone</p>
+      <div id="tableWrap"></div>
+
+      <div class="danger-zone">
+        <h2>Clear queue</h2>
+        <p class="sub">Does not delete full backup history. End-of-day: export → Oasis write-back → only then clear.</p>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0 12px">
+          <input type="checkbox" id="onlyExported"> Clear only rows marked exported
+        </label>
+        <button class="btn danger" id="clear1">Clear queue…</button>
+        <button class="btn danger hidden" id="clear2">Really clear queue now</button>
+        <button class="btn ghost hidden" id="clearCancel">Cancel</button>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+const PASS = 'Pedro@2008!';
+const QUEUE_KEY = 'mb-pantry-queue';
+const BACKUP_KEY = 'mb-pantry-backup';
+const EXPORTED_KEY = 'mb-pantry-exported-ids';
+
+const $ = (id) => document.getElementById(id);
+
+function load(key) {
+  try { return JSON.parse(localStorage.getItem(key) || '[]'); }
+  catch (_) { return []; }
+}
+function save(key, arr) {
+  localStorage.setItem(key, JSON.stringify(arr));
+}
+function loadExported() {
+  try { return new Set(JSON.parse(localStorage.getItem(EXPORTED_KEY) || '[]')); }
+  catch (_) { return new Set(); }
+}
+function saveExported(set) {
+  localStorage.setItem(EXPORTED_KEY, JSON.stringify([...set]));
+}
+function rowId(r) {
+  return (r.at || '') + '|' + (r.case || '') + '|' + (r.mode || '') + '|' + (r.phone || '');
+}
+function fmtTime(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', { timeZone: 'America/New_York', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+  } catch (_) { return iso; }
+}
+function stamp() {
+  const d = new Date();
+  const p = (x) => String(x).padStart(2,'0');
+  return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+function download(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function csvEscape(s) {
+  const t = String(s == null ? '' : s);
+  if (/[",\n\r]/.test(t)) return '"' + t.replace(/"/g,'""') + '"';
+  return t;
+}
+function toCsv(rows) {
+  const cols = ['at','mode','case','name','phone','amount','unit','category','print','dob','hh','address','income','barcode'];
+  const lines = [cols.join(',')];
+  rows.forEach(r => lines.push(cols.map(c => csvEscape(r[c])).join(',')));
+  return lines.join('\n');
+}
+function flash(ok, text) {
+  $('msg').classList.add('hidden');
+  $('err').classList.add('hidden');
+  if (ok) { $('msg').textContent = text; $('msg').classList.remove('hidden'); }
+  else { $('err').textContent = text; $('err').classList.remove('hidden'); }
+}
+
+function render() {
+  const q = load(QUEUE_KEY);
+  const b = load(BACKUP_KEY);
+  const exported = loadExported();
+  $('qCount').textContent = q.length;
+  $('bCount').textContent = b.length;
+  const wrap = $('tableWrap');
+  if (!q.length) {
+    wrap.innerHTML = '<p class="empty">Queue empty. Confirm visits on Returning or New to fill it.</p>';
+    return;
+  }
+  const rows = q.slice().reverse().map(r => {
+    const id = rowId(r);
+    const flagged = exported.has(id);
+    return '<tr>' +
+      '<td>' + esc(fmtTime(r.at)) + (flagged ? ' <span class="flag">exported</span>' : '') + '</td>' +
+      '<td><span class="mode">' + esc(r.mode || '') + '</span></td>' +
+      '<td><b>' + esc(r.case || '—') + '</b></td>' +
+      '<td>' + esc(r.name || '—') + '</td>' +
+      '<td>' + esc(r.phone || '—') + '</td>' +
+      '</tr>';
+  }).join('');
+  wrap.innerHTML = '<table><thead><tr><th>Time</th><th>Mode</th><th>Case</th><th>Name</th><th>Phone</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+$('gateGo').onclick = () => {
+  if ($('pass').value !== PASS) {
+    $('gateErr').classList.remove('hidden');
+    return;
+  }
+  $('gate').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  render();
+};
+
+$('dlCsv').onclick = () => {
+  const q = load(QUEUE_KEY);
+  if (!q.length) { flash(false, 'Queue is empty.'); return; }
+  download('pantry-queue-' + stamp() + '.csv', toCsv(q), 'text/csv');
+  flash(true, 'CSV downloaded (' + q.length + ' rows).');
+};
+$('dlJson').onclick = () => {
+  const q = load(QUEUE_KEY);
+  if (!q.length) { flash(false, 'Queue is empty.'); return; }
+  download('pantry-queue-' + stamp() + '.json', JSON.stringify(q, null, 2), 'application/json');
+  flash(true, 'Queue JSON downloaded (' + q.length + ' rows).');
+};
+$('dlFull').onclick = () => {
+  const b = load(BACKUP_KEY);
+  if (!b.length) { flash(false, 'Full backup is empty.'); return; }
+  download('pantry-backup-full-' + stamp() + '.json', JSON.stringify(b, null, 2), 'application/json');
+  flash(true, 'Full backup JSON downloaded (' + b.length + ' rows).');
+};
+$('copyText').onclick = async () => {
+  const q = load(QUEUE_KEY);
+  if (!q.length) { flash(false, 'Queue is empty.'); return; }
+  const text = q.map(r =>
+    [fmtTime(r.at), r.mode, r.case, r.name, r.phone].join('\t')
+  ).join('\n');
+  $('copyBox').value = text;
+  $('copyBox').classList.remove('hidden');
+  try {
+    await navigator.clipboard.writeText(text);
+    flash(true, 'Copied ' + q.length + ' rows to clipboard.');
+  } catch (_) {
+    $('copyBox').select();
+    flash(true, 'Select/copy the text box below (clipboard blocked).');
+  }
+};
+$('markExported').onclick = () => {
+  const q = load(QUEUE_KEY);
+  if (!q.length) { flash(false, 'Queue is empty.'); return; }
+  const set = loadExported();
+  q.forEach(r => set.add(rowId(r)));
+  saveExported(set);
+  render();
+  flash(true, 'Marked ' + q.length + ' queue rows as exported to Oasis. Queue not deleted — clear only after you confirm.');
+};
+
+$('clear1').onclick = () => {
+  $('clear1').classList.add('hidden');
+  $('clear2').classList.remove('hidden');
+  $('clearCancel').classList.remove('hidden');
+  flash(false, 'Tap again to confirm clear. This does not wipe mb-pantry-backup.');
+};
+$('clearCancel').onclick = () => {
+  $('clear1').classList.remove('hidden');
+  $('clear2').classList.add('hidden');
+  $('clearCancel').classList.add('hidden');
+  flash(true, 'Clear cancelled.');
+};
+$('clear2').onclick = () => {
+  const only = $('onlyExported').checked;
+  const q = load(QUEUE_KEY);
+  if (!q.length) {
+    flash(false, 'Queue already empty.');
+    $('clear1').classList.remove('hidden');
+    $('clear2').classList.add('hidden');
+    $('clearCancel').classList.add('hidden');
+    return;
+  }
+  if (only) {
+    const exported = loadExported();
+    const kept = q.filter(r => !exported.has(rowId(r)));
+    const removed = q.length - kept.length;
+    if (!removed) {
+      flash(false, 'No rows marked exported. Mark exported first, or uncheck the filter.');
+      return;
+    }
+    save(QUEUE_KEY, kept);
+    flash(true, 'Cleared ' + removed + ' exported row(s). ' + kept.length + ' remain. Backup history kept.');
+  } else {
+    save(QUEUE_KEY, []);
+    flash(true, 'Active queue cleared (' + q.length + ' rows). Full backup history kept.');
+  }
+  $('clear1').classList.remove('hidden');
+  $('clear2').classList.add('hidden');
+  $('clearCancel').classList.add('hidden');
+  render();
+};
+
+// Live refresh if another tab writes
+window.addEventListener('storage', (e) => {
+  if (e.key === QUEUE_KEY || e.key === BACKUP_KEY || e.key === EXPORTED_KEY) {
+    if (!$('app').classList.contains('hidden')) render();
+  }
+});
+</script>
+</body>
+</html>
