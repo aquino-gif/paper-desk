@@ -26,7 +26,7 @@
     background:#000;
   }
   .scan-guide {
-    pointer-events:none; position:absolute; left:4%; right:4%; top:36%; height:28%;
+    pointer-events:none; position:absolute; left:3%; right:3%; top:30%; height:40%;
     border:2px solid rgba(26,159,75,.95); border-radius:8px; z-index:2;
     box-shadow:0 0 0 9999px rgba(0,0,0,.35);
   }
@@ -103,7 +103,7 @@
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Point the green strip at the Oasis Code-128. Hard refresh ?v=20260903h if camera was stuck. ZBar WASM primary.</p>
+        <p class="sub">Point the green strip at the Oasis Code-128. Hard refresh ?v=20260903i if camera was stuck. ZBar ESM/inlined primary.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
@@ -111,7 +111,7 @@
         </div>
         <canvas id="scanCanvas" class="hidden" aria-hidden="true"></canvas>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260903h — Allow camera. Hold Oasis Code-128 flat in the green strip.</p>
+        <p class="hint" id="scanHint">v20260903i — Allow camera. Hold Oasis Code-128 flat in the green strip.</p>
         <pre class="dbg" id="scanDbg">dbg: waiting…</pre>
         <button class="btn torch" id="torchBtn" disabled>Torch</button>
         <div class="row2" style="margin-top:10px">
@@ -191,7 +191,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260903h';
+const VER = 'v20260903i';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -217,7 +217,7 @@ let decodeCanvas = null;
 let decodeCtx = null;
 let boostCanvas = null;
 let boostCtx = null;
-const CROP_BANDS = [0.20, 0.28, 0.40];
+const CROP_BANDS = [0.28, 0.40, 0.50, 0.60];
 let dbg = { engine: '—', raw: '—', video: '—', crop: '—', note: '', zbar: 'N' };
 let dbgVisible = true;
 let zxingReadyPromise = null;
@@ -261,56 +261,75 @@ function polyfillBarcodeDetector(Polyfill) {
 }
 
 async function loadZBar() {
-  if (zbarLoaded && zbarApi) return true;
+  if (zbarLoaded && zbarApi && (zbarApi.scanImageData || zbarApi.scanRGBABuffer)) return true;
   if (zbarLoadPromise) return zbarLoadPromise;
   zbarLoadPromise = (async () => {
-    const tryUrls = [];
-    if (typeof ZBAR_CDN === 'string' && ZBAR_CDN) tryUrls.push(ZBAR_CDN);
-    if (typeof ZBAR_LOCAL === 'string' && ZBAR_LOCAL) tryUrls.push(ZBAR_LOCAL);
+    const tryBases = [];
+    // Prefer inlined ESM (no separate .wasm MIME/CORS) then sibling-wasm ESM
+    if (typeof ZBAR_CDN === 'string' && ZBAR_CDN) {
+      tryBases.push(ZBAR_CDN.replace(/\/$/, '') + '/inlined');
+      tryBases.push(ZBAR_CDN.replace(/\/$/, ''));
+    }
+    if (typeof ZBAR_LOCAL === 'string' && ZBAR_LOCAL) {
+      tryBases.push(ZBAR_LOCAL.replace(/\/$/, '') + '/inlined');
+      tryBases.push(ZBAR_LOCAL.replace(/\/$/, ''));
+    }
     let lastErr = null;
-    for (let ui = 0; ui < tryUrls.length; ui++) {
-      const base = tryUrls[ui].replace(/\/$/, '');
-      const candidates = [base + '/index.mjs', base + '/index.js', base + '/main.mjs', base + '/main.js'];
+    for (let ui = 0; ui < tryBases.length; ui++) {
+      const base = tryBases[ui].replace(/\/$/, '');
+      const isInlined = /\/inlined$/i.test(base);
+      const candidates = [base + '/index.mjs', base + '/main.mjs'];
       let mod = null;
-      let lastImportErr = null;
+      let usedUrl = '';
       for (let ci = 0; ci < candidates.length && !mod; ci++) {
         try {
-          mod = await import(candidates[ci]);
+          const m = await import(/* webpackIgnore: true */ candidates[ci]);
+          const api = (m && (m.scanImageData || m.scanRGBABuffer)) ? m
+            : (m && m.default && (m.default.scanImageData || m.default.scanRGBABuffer) ? m.default : null);
+          if (api) { mod = api; usedUrl = candidates[ci]; }
         } catch (ie) {
-          lastImportErr = ie;
+          lastErr = ie;
         }
       }
-      if (!mod) {
-        lastErr = lastImportErr || lastErr;
-        continue;
-      }
+      if (!mod) continue;
       try {
-        if (mod.setModuleArgs) {
+        // Non-inlined: absolute locateFile so GH Pages / Safari resolve .wasm correctly.
+        // Inlined embeds wasm — skip setModuleArgs.
+        if (!isInlined && typeof mod.setModuleArgs === 'function') {
+          const absBase = new URL(base + '/', (typeof location !== 'undefined' ? location.href : 'https://localhost/')).href;
           mod.setModuleArgs({
-            locateFile: (filename) => base + '/' + filename
+            locateFile: (filename) => absBase + filename
           });
+        }
+        if (typeof mod.getInstance === 'function') {
+          await mod.getInstance();
+        }
+        // Prove API actually works shape-wise
+        if (!mod.scanImageData && !mod.scanRGBABuffer) {
+          throw new Error('ZBar module missing scanImageData');
         }
         zbarApi = mod;
         try {
           const pfBase = (typeof POLYFILL_CDN === 'string' ? POLYFILL_CDN : './vendor/barcode-detector-polyfill').replace(/\/$/, '');
-          const pf = await import(pfBase + '/main.js');
+          const pf = await import(/* webpackIgnore: true */ pfBase + '/main.js');
           if (pf && pf.BarcodeDetectorPolyfill) {
             polyfillBarcodeDetector(pf.BarcodeDetectorPolyfill);
           }
         } catch (pe) {
           console.warn('polyfill optional load failed', pe);
         }
-        if (mod.getInstance) await mod.getInstance();
         zbarLoaded = true;
         zbarLoadError = '';
-        setDbg({ note: 'ZBar WASM ready from ' + base });
+        setDbg({ note: 'ZBar WASM ready from ' + usedUrl, zbar: 'Y' });
         return true;
       } catch (e) {
         lastErr = e;
-        console.warn('ZBar load failed from', base, e);
+        console.warn('ZBar init failed from', base, e);
+        zbarApi = null;
       }
     }
     zbarLoaded = false;
+    zbarApi = null;
     zbarLoadError = (lastErr && (lastErr.message || lastErr.name)) || String(lastErr || 'unknown');
     const msg = 'ZBar load failed: ' + zbarLoadError;
     const errEl = $('scanErr');
@@ -318,7 +337,7 @@ async function loadZBar() {
       errEl.textContent = msg;
       errEl.classList.remove('hidden');
     }
-    setDbg({ note: msg });
+    setDbg({ note: msg, zbar: 'N' });
     return false;
   })();
   return zbarLoadPromise;
@@ -1094,6 +1113,11 @@ $('gateGo').onclick = async () => {
   }
   $('gate').classList.add('hidden');
   $('app').classList.remove('hidden');
+  // User-gesture ZBar WASM warm-up (iOS Safari) before camera starts
+  try {
+    setDbg({ note: 'warming ZBar…' });
+    await loadZBar();
+  } catch (_) {}
   try {
     const res = await fetch('cases.json', { cache: 'no-store' });
     const data = await res.json();
@@ -1316,7 +1340,7 @@ $('showTestBarcode').onclick = (ev) => {
   const wrap = document.createElement('div');
   wrap.id = 'testBarcodeOverlay';
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
-  wrap.innerHTML = '<img src="test-barcode.png?v=20260903h" alt="test barcode 00378814" style="max-width:96%;max-height:70vh;background:#fff;padding:12px;border-radius:8px">' +
+  wrap.innerHTML = '<img src="test-barcode.png?v=20260903i" alt="test barcode 00378814" style="max-width:96%;max-height:70vh;background:#fff;padding:12px;border-radius:8px">' +
     '<p style="color:#fff;margin:12px 0 0;font:14px system-ui">00378814 / C378814 Ana Ramos — tap to close</p>';
   wrap.onclick = () => wrap.remove();
   document.body.appendChild(wrap);
