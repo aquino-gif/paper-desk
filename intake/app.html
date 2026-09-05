@@ -103,7 +103,7 @@
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Point the green strip at the Oasis Code-128. Hard refresh ?v=20260904d if camera was stuck. ZXing primary + ZBar packed fallback.</p>
+        <p class="sub">Capture-first line: scan → save queue immediately. Match runs later. Camera stays live. Hard refresh ?v=20260904e.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
@@ -111,7 +111,7 @@
         </div>
         <canvas id="scanCanvas" class="hidden" aria-hidden="true"></canvas>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260904d — Allow camera. Hold Oasis Code-128 flat in the green strip.</p>
+        <p class="hint" id="scanHint">v20260904e — Capture-first: scan → saved → next.</p>
         <pre class="dbg" id="scanDbg">dbg: waiting…</pre>
         <button class="btn torch" id="torchBtn" disabled>Torch</button>
         <div class="row2" style="margin-top:10px">
@@ -191,7 +191,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260904d';
+const VER = 'v20260904e';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -212,6 +212,9 @@ let holdStart = 0;
 let holdRaf = null;
 let holdDone = false;
 let lastDecodeAt = 0;
+let lastCaptureCode = '';
+let lastCaptureAt = 0;
+let captureFlashTimer = null;
 let scanActive = false;
 let decodeCanvas = null;
 let decodeCtx = null;
@@ -454,11 +457,11 @@ function queueLen() {
 function refreshQueueCount() {
   const n = queueLen();
   const el = $('queueCount');
-  if (el) el.textContent = n ? (n + ' visit' + (n===1?'':'s') + ' saved') : '';
+  if (el) el.textContent = n ? (n + ' capture' + (n===1?'':'s') + ' saved') : '';
   const g = $('gateQueueHint');
   if (g) {
     if (n > 0) {
-      g.textContent = n + ' visit' + (n===1?'':'s') + ' saved on this device';
+      g.textContent = n + ' capture' + (n===1?'':'s') + ' saved on this device';
       g.classList.remove('hidden');
     } else {
       g.classList.add('hidden');
@@ -596,30 +599,95 @@ function sanitizeBarcodeText(raw) {
   return t.trim();
 }
 
+function staffForCapture() {
+  const t = (($('staffLabel') && $('staffLabel').textContent) || '').trim();
+  if (!t || /cases loaded|missing|lookup/i.test(t)) return 'Miami Bethany';
+  return t;
+}
+
+/** Capture-first: enqueue barcode immediately. Match is best-effort metadata only — never blocks the line. */
+function captureScan(decoded, source) {
+  const barcode = String(decoded || '').trim();
+  if (!barcode) return null;
+  const now = Date.now();
+  // Same-code debounce ~1.8s (card still in view); different codes OK immediately
+  if (lastCaptureCode && String(lastCaptureCode) === barcode && (now - lastCaptureAt) < 1800) {
+    setDbg({ note: 'dup skip ' + barcode + ' (' + (now - lastCaptureAt) + 'ms)' });
+    return null;
+  }
+  const hit = findByBarcode(barcode);
+  const stripped = barcode.replace(/\D/g, '').replace(/^0+/, '') || barcode;
+  const caseGuess = hit ? (hit.case || '') : ('C' + stripped);
+  const at = new Date().toISOString();
+  const id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : (barcode + '+' + at);
+  const row = {
+    id: id,
+    at: at,
+    barcode: barcode,
+    case: caseGuess,
+    name: hit ? (hit.name || '') : '',
+    matched: !!hit,
+    staff: staffForCapture(),
+    mode: 'capture-first',
+    source: source || 'live',
+    ver: VER
+  };
+  try {
+    const q = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
+    q.push(row);
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  } catch (_) {}
+  try {
+    const b = JSON.parse(localStorage.getItem(BACKUP_KEY) || '[]');
+    b.push(row);
+    localStorage.setItem(BACKUP_KEY, JSON.stringify(b));
+  } catch (_) {}
+  lastCaptureCode = barcode;
+  lastCaptureAt = now;
+  refreshQueueCount();
+  // Prefer speed: skip downloadVisit popup in capture-first; queue + backup only
+  return row;
+}
+
+function flashCapture(row) {
+  const hint = $('scanHint');
+  const err = $('scanErr');
+  if (err) {
+    err.textContent = '';
+    err.classList.add('hidden');
+  }
+  if (!hint || !row) return;
+  const who = row.matched
+    ? ((row.name || '') + ' · ' + (row.case || row.barcode))
+    : ('CODE ' + row.barcode);
+  hint.textContent = VER + ' — Saved · ' + who + '. Next.';
+  setDbg({ note: 'queued ' + row.barcode + (row.matched ? ' matched' : ' unmatched'), raw: row.barcode });
+  if (captureFlashTimer) clearTimeout(captureFlashTimer);
+  captureFlashTimer = setTimeout(() => {
+    if ($('scanHint') === hint && !$('screen-scan').classList.contains('hidden')) {
+      hint.textContent = VER + ' — Capture-first: scan → saved → next.';
+    }
+  }, 1000);
+}
+
 function onDecoded(decoded, source) {
   if (!scanActive && source !== 'photo') return;
-  const now = Date.now();
-  if (source !== 'photo' && now - lastDecodeAt < 280) return;
-  lastDecodeAt = now;
-  const rawIn = String(decoded||'');
+  const rawIn = String(decoded || '');
   decoded = sanitizeBarcodeText(decoded);
   setDbg({ raw: rawIn + (decoded !== rawIn ? (' → ' + decoded) : ''), engine: source || dbg.engine });
   if (!decoded) return;
-  const hit = findByBarcode(decoded);
-  if (hit) {
-    // ONLY stop after successful match
-    stopScan();
-    openMatch(hit);
-    return;
+  // CAPTURE-FIRST: do not stopScan / openMatch / hold-to-confirm on live scan
+  const row = captureScan(decoded, source || dbg.engine || 'live');
+  if (row) {
+    lastDecodeAt = Date.now();
+    flashCapture(row);
+    // Keep camera live; if somehow stopped, resume
+    if (!scanActive) {
+      try { startScan(); } catch (_) {}
+    }
   }
-  // Keep scanning — show locked code clearly
-  if (decoded === lastBad && now - lastBadAt < 1800 && source !== 'photo') return;
-  lastBad = decoded;
-  lastBadAt = now;
-  const msg = 'Locked CODE ' + decoded + ' — not in Sunday snapshot; refresh cases.json';
-  $('scanErr').textContent = msg;
-  $('scanErr').classList.remove('hidden');
-  setDbg({ note: msg });
 }
 
 function focusWedge() {
@@ -1111,7 +1179,7 @@ async function startScan() {
     if (hasNative) engParts.push('BD');
     if (zxingReader128) engParts.push('zxing');
     const eng = engParts.length ? engParts.join('+') : 'no-decoder';
-    $('scanHint').textContent = VER + ' — Camera live (' + eng + '). Hold Code-128 in the green strip.';
+    $('scanHint').textContent = VER + ' — Capture-first (' + eng + '): scan → saved → next.';
     setDbg({ note: 'live engines: ' + eng + ' | ZBar ' + (zbarLoaded ? 'Y' : 'N') });
   } catch (e) {
     const msg = (e && (e.message || e.name || String(e))) || 'unknown';
@@ -1373,7 +1441,7 @@ $('showTestBarcode').onclick = (ev) => {
   const wrap = document.createElement('div');
   wrap.id = 'testBarcodeOverlay';
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
-  wrap.innerHTML = '<img src="test-barcode.png?v=20260904a" alt="test barcode 00378814" style="max-width:96%;max-height:70vh;background:#fff;padding:12px;border-radius:8px">' +
+  wrap.innerHTML = '<img src="test-barcode.png?v=20260904e" alt="test barcode 00378814" style="max-width:96%;max-height:70vh;background:#fff;padding:12px;border-radius:8px">' +
     '<p style="color:#fff;margin:12px 0 0;font:14px system-ui">00378814 / C378814 Ana Ramos — tap to close</p>';
   wrap.onclick = () => wrap.remove();
   document.body.appendChild(wrap);
