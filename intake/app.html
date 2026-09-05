@@ -103,7 +103,7 @@
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Capture-first line: scan → save queue immediately. Match runs later. Camera stays live. Hard refresh ?v=20260904e.</p>
+        <p class="sub">Capture-first + BarcodeDetector-primary (iOS). ZXing second, ZBar last. Hard refresh ?v=20260904f.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
@@ -111,7 +111,7 @@
         </div>
         <canvas id="scanCanvas" class="hidden" aria-hidden="true"></canvas>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260904e — Capture-first: scan → saved → next.</p>
+        <p class="hint" id="scanHint">v20260904f — BD-primary capture-first: scan → saved → next.</p>
         <pre class="dbg" id="scanDbg">dbg: waiting…</pre>
         <button class="btn torch" id="torchBtn" disabled>Torch</button>
         <div class="row2" style="margin-top:10px">
@@ -191,7 +191,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260904e';
+const VER = 'v20260904f';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -407,16 +407,49 @@ async function tryZBarOnCanvas(canvas, label) {
   return '';
 }
 
-async function tryNativeBDOnCanvas(canvas, label) {
-  if (!nativeDetector || !canvas) return '';
+
+function ensureNativeDetector() {
+  if (nativeDetector) return true;
+  if (typeof window.BarcodeDetector === 'undefined') return false;
   try {
-    const codes = await nativeDetector.detect(canvas);
-    if (codes && codes.length) {
-      const raw = codes[0].rawValue || '';
-      if (raw) {
-        setDbg({ engine: label || 'BarcodeDetector' });
-        return raw;
+    nativeDetector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e'] });
+  } catch (_) {
+    try { nativeDetector = new BarcodeDetector(); } catch (e2) { nativeDetector = null; return false; }
+  }
+  return !!nativeDetector;
+}
+
+async function tryNativeBDOnCanvas(canvas, label) {
+  if (!canvas) return '';
+  if (!ensureNativeDetector()) return '';
+  const tryOne = async (src, tag) => {
+    try {
+      const codes = await nativeDetector.detect(src);
+      if (codes && codes.length) {
+        const raw = codes[0].rawValue || '';
+        if (raw) {
+          setDbg({ engine: (label || 'BarcodeDetector') + (tag ? ('/' + tag) : '') });
+          return raw;
+        }
       }
+    } catch (_) {}
+    return '';
+  };
+  let raw = await tryOne(canvas, '');
+  if (raw) return raw;
+  try {
+    const boosted = contrastBoost(canvas);
+    if (boosted) {
+      raw = await tryOne(boosted, 'boost');
+      if (raw) return raw;
+    }
+  } catch (_) {}
+  try {
+    if (typeof createImageBitmap === 'function') {
+      const bmp = await createImageBitmap(canvas);
+      raw = await tryOne(bmp, 'bitmap');
+      try { bmp.close && bmp.close(); } catch (_) {}
+      if (raw) return raw;
     }
   } catch (_) {}
   return '';
@@ -1009,16 +1042,16 @@ async function zxingDecodeLoop(video) {
             video: info.vw + 'x' + info.vh,
             crop: info.band + ' @' + up + 'x ' + info.w + 'x' + info.h
           });
-          // 1) ZXing primary (iPhone Safari — ZBar often silent)
+          // 1) BarcodeDetector primary (iOS Safari native / polyfill)
+          text = await tryNativeBDOnCanvas(info.canvas, 'BD-band' + info.band);
+          if (text) { engineHit = 'BarcodeDetector'; break; }
+          // 2) ZXing second
           if (hasZXing) {
             text = decodeVariants(info.canvas, fmt128, 'zxing-band' + info.band + '@' + up + 'x');
             if (!text) text = decodeVariants(info.canvas, fmtMulti, 'zxing-multi' + info.band + '@' + up + 'x');
             if (text) { engineHit = 'zxing'; break; }
           }
-          // 2) native / polyfill BarcodeDetector
-          text = await tryNativeBDOnCanvas(info.canvas, 'BD-band' + info.band);
-          if (text) { engineHit = 'BarcodeDetector'; break; }
-          // 3) ZBar packed fallback
+          // 3) ZBar packed last
           text = await tryZBarOnCanvas(info.canvas, 'zbar-band' + info.band + '@' + up + 'x');
           if (text) { engineHit = 'zbar'; break; }
         }
@@ -1028,14 +1061,12 @@ async function zxingDecodeLoop(video) {
         const full = drawFull(video, 1280);
         if (full) {
           setDbg({ crop: 'full' });
-          if (hasZXing) {
+          text = await tryNativeBDOnCanvas(full, 'BD-full');
+          if (text) engineHit = 'BarcodeDetector';
+          if (!text && hasZXing) {
             text = decodeVariants(full, fmt128, 'zxing-full');
             if (!text) text = decodeVariants(full, fmtMulti, 'zxing-full-multi');
             if (text) engineHit = 'zxing';
-          }
-          if (!text) {
-            text = await tryNativeBDOnCanvas(full, 'BD-full');
-            if (text) engineHit = 'BarcodeDetector';
           }
           if (!text) {
             text = await tryZBarOnCanvas(full, 'zbar-full');
@@ -1061,28 +1092,23 @@ async function zxingDecodeLoop(video) {
 }
 
 function startNativeLoop(video) {
-  if (typeof window.BarcodeDetector === 'undefined') return;
-  try {
-    nativeDetector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e'] });
-  } catch (_) {
-    try { nativeDetector = new BarcodeDetector(); } catch (e2) { return; }
-  }
+  // BarcodeDetector-primary live RAF (native or polyfill). Video frame first.
+  if (!ensureNativeDetector()) return;
   const tick = async () => {
     if (!scanActive || !nativeDetector) return;
     try {
       if (video.readyState >= 2) {
-        // Prefer crop via canvas ImageBitmap if possible
-        const strip = drawStrip(video, 2);
         let codes = [];
-        if (strip) {
-          try { codes = await nativeDetector.detect(strip); } catch (_) { codes = []; }
-        }
-        if ((!codes || !codes.length) && video.readyState >= 2) {
-          try { codes = await nativeDetector.detect(video); } catch (_) { codes = []; }
+        try { codes = await nativeDetector.detect(video); } catch (_) { codes = []; }
+        if ((!codes || !codes.length)) {
+          const strip = drawStrip(video, 2);
+          if (strip) {
+            try { codes = await nativeDetector.detect(strip); } catch (_) { codes = []; }
+          }
         }
         if (codes && codes.length && scanActive) {
           const raw = codes[0].rawValue || '';
-          if (raw) onDecoded(raw);
+          if (raw) onDecoded(raw, 'BarcodeDetector');
         }
       }
     } catch (_) {}
@@ -1124,10 +1150,10 @@ async function startScan() {
       throw new Error('Camera API unavailable (need HTTPS)');
     }
 
-    // ZBar WASM primary (jsdelivr, local vendor fallback)
+    // ZBar WASM for exact-buffer fallback + iOS BarcodeDetector polyfill
     const zOk = await loadZBar();
     if (!zOk) {
-      // surface already in red via loadZBar; still allow BD/ZXing fallbacks
+      // surface already in red via loadZBar; still allow native BD / ZXing
     }
     await waitForZXing(2500);
 
@@ -1170,17 +1196,18 @@ async function startScan() {
       zxingReaderMulti = new ZXing.BrowserMultiFormatReader(buildHints(fmtMulti));
     }
 
-    const hasNative = typeof window.BarcodeDetector !== 'undefined';
+    // Recreate detector after stopScan() nulled it; BD RAF is primary live path
+    const hasNative = ensureNativeDetector();
     if (hasNative) startNativeLoop(video);
     zxingDecodeLoop(video);
 
     const engParts = [];
-    if (zbarLoaded) engParts.push('zbar');
-    if (hasNative) engParts.push('BD');
+    if (hasNative) engParts.push('BD*');
     if (zxingReader128) engParts.push('zxing');
+    if (zbarLoaded) engParts.push('zbar');
     const eng = engParts.length ? engParts.join('+') : 'no-decoder';
-    $('scanHint').textContent = VER + ' — Capture-first (' + eng + '): scan → saved → next.';
-    setDbg({ note: 'live engines: ' + eng + ' | ZBar ' + (zbarLoaded ? 'Y' : 'N') });
+    $('scanHint').textContent = VER + ' — BD-primary (' + eng + '): scan → saved → next.';
+    setDbg({ note: 'order BD→ZXing→ZBar | live: ' + eng + ' | ZBar ' + (zbarLoaded ? 'Y' : 'N') });
   } catch (e) {
     const msg = (e && (e.message || e.name || String(e))) || 'unknown';
     $('scanErr').textContent = 'Camera: ' + msg + '. Tap Retry, or emergency Type # / phone. HTTPS + Allow Camera required.';
@@ -1340,13 +1367,7 @@ async function decodeStillImage(imgOrCanvas) {
   ] : null;
 
   // Ensure BD available (native or polyfill from loadZBar)
-  if (!nativeDetector && typeof window.BarcodeDetector !== 'undefined') {
-    try {
-      nativeDetector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e'] });
-    } catch (_) {
-      try { nativeDetector = new BarcodeDetector(); } catch (e2) {}
-    }
-  }
+  ensureNativeDetector();
 
   let text = '';
   let engineHit = '';
@@ -1362,8 +1383,6 @@ async function decodeStillImage(imgOrCanvas) {
         crop: 'photo ' + info.band + ' @' + up + 'x',
         engine: 'photo'
       });
-      text = await tryZBarOnCanvas(info.canvas, 'zbar-photo' + info.band);
-      if (text) { engineHit = 'zbar'; break; }
       text = await tryNativeBDOnCanvas(info.canvas, 'BD-photo');
       if (text) { engineHit = 'BarcodeDetector'; break; }
       if (hasZXing) {
@@ -1371,22 +1390,24 @@ async function decodeStillImage(imgOrCanvas) {
         if (!text) text = decodeVariants(info.canvas, fmtMulti, 'zxing-photo-multi' + info.band);
         if (text) { engineHit = 'zxing'; break; }
       }
+      text = await tryZBarOnCanvas(info.canvas, 'zbar-photo' + info.band);
+      if (text) { engineHit = 'zbar'; break; }
     }
   }
   if (!text) {
     const full = drawFull(imgOrCanvas, 1600);
     if (full) {
       setDbg({ crop: 'photo-full' });
-      text = await tryZBarOnCanvas(full, 'zbar-photo-full');
-      if (text) engineHit = 'zbar';
-      if (!text) {
-        text = await tryNativeBDOnCanvas(full, 'BD-photo-full');
-        if (text) engineHit = 'BarcodeDetector';
-      }
+      text = await tryNativeBDOnCanvas(full, 'BD-photo-full');
+      if (text) engineHit = 'BarcodeDetector';
       if (!text && hasZXing) {
         text = decodeVariants(full, fmt128, 'zxing-photo-full');
         if (!text) text = decodeVariants(full, fmtMulti, 'zxing-photo-full-multi');
         if (text) engineHit = 'zxing';
+      }
+      if (!text) {
+        text = await tryZBarOnCanvas(full, 'zbar-photo-full');
+        if (text) engineHit = 'zbar';
       }
     }
   }
@@ -1441,7 +1462,7 @@ $('showTestBarcode').onclick = (ev) => {
   const wrap = document.createElement('div');
   wrap.id = 'testBarcodeOverlay';
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
-  wrap.innerHTML = '<img src="test-barcode.png?v=20260904e" alt="test barcode 00378814" style="max-width:96%;max-height:70vh;background:#fff;padding:12px;border-radius:8px">' +
+  wrap.innerHTML = '<img src="test-barcode.png?v=20260904f" alt="test barcode 00378814" style="max-width:96%;max-height:70vh;background:#fff;padding:12px;border-radius:8px">' +
     '<p style="color:#fff;margin:12px 0 0;font:14px system-ui">00378814 / C378814 Ana Ramos — tap to close</p>';
   wrap.onclick = () => wrap.remove();
   document.body.appendChild(wrap);
