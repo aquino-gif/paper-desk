@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Backup / queue — Miami Bethany</title>
 <style>
-  :root { --g:#1a9f4b; --g2:#e8f7ee; --ink:#111; --muted:#666; --warn:#c0392b; --o:#d35400; }
+  :root { --g:#1a9f4b; --g2:#e8f7ee; --ink:#111; --muted:#666; --warn:#c0392b; }
   * { box-sizing: border-box; }
   body { margin:0; font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif; color:var(--ink); background:#f7f7f7; }
   .wrap { max-width:560px; margin:0 auto; min-height:100vh; background:#fff; display:flex; flex-direction:column; }
@@ -15,10 +15,9 @@
   main { flex:1; padding:0 16px 32px; }
   h1 { font-size:22px; margin:8px 0 4px; }
   .sub { color:var(--muted); font-size:14px; margin:0 0 12px; line-height:1.4; }
-  .counts { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:12px 0; }
-  .stat { border:1px solid #e5e5e5; border-radius:12px; padding:12px; text-align:center; }
-  .stat b { display:block; font-size:28px; font-variant-numeric:tabular-nums; }
-  .stat span { font-size:12px; color:var(--muted); }
+  .stat { border:1px solid #e5e5e5; border-radius:12px; padding:14px; text-align:center; margin:12px 0; }
+  .stat b { display:block; font-size:32px; font-variant-numeric:tabular-nums; }
+  .stat span { font-size:13px; color:var(--muted); }
   .btn { display:block; width:100%; border:0; border-radius:12px; padding:14px 16px; font-size:15px; font-weight:700; cursor:pointer; }
   .btn.primary { background:var(--g); color:#fff; }
   .btn.secondary { background:#fff; color:var(--g); border:2px solid var(--g); }
@@ -35,7 +34,6 @@
   }
   .okmsg.big { background:var(--g2); border:2px solid var(--g); color:#0d5c2e; }
   .err.big { background:#fdecea; border:2px solid var(--warn); color:var(--warn); }
-  .btn.danger-fill { background:var(--warn); color:#fff; border:2px solid var(--warn); }
   .gate { padding:40px 16px; }
   input[type=password] {
     width:100%; font-size:18px; padding:14px; border:1px solid #ccc; border-radius:12px; margin:8px 0 12px;
@@ -44,7 +42,6 @@
   th, td { text-align:left; padding:8px 6px; border-bottom:1px solid #eee; vertical-align:top; }
   th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
   .empty { text-align:center; color:var(--muted); padding:24px 8px; font-size:14px; }
-  .flag { font-size:11px; background:var(--g2); color:var(--g); padding:2px 6px; border-radius:6px; font-weight:700; }
   .mode { font-size:11px; color:var(--muted); }
   #copyBox { width:100%; min-height:80px; font-size:12px; font-family:ui-monospace,monospace; padding:10px; border:1px solid #ddd; border-radius:10px; margin-top:8px; }
   .danger-zone { margin-top:24px; padding:14px; border:1px dashed #f5c6c6; border-radius:12px; background:#fffafa; }
@@ -65,53 +62,35 @@
     <header>
       <span class="badge">BACKUP</span>
       <div class="nav">
-        <a href="app.html">Returning</a>
-        <a href="new.html">New</a>
+        <a href="app.html?v=20260905j">Returning</a>
       </div>
     </header>
     <main>
       <h1>Desk queue</h1>
-      <p class="sub">Works fully offline (v20260905i). Export before clearing. Active list ≠ full backup — clear each separately.</p>
+      <p class="sub">v20260905j — export, then clear when done. Active list on this phone only.</p>
 
-      <div class="counts">
-        <div class="stat"><b id="qCount">0</b><span>Active queue<br><code>mb-pantry-queue</code></span></div>
-        <div class="stat"><b id="bCount">0</b><span>Full backup<br><code>mb-pantry-backup</code></span></div>
-      </div>
+      <div class="stat"><b id="qCount">0</b><span>Active list</span></div>
 
       <div class="btnrow">
         <button class="btn primary" id="dlCsv">Download CSV</button>
         <button class="btn secondary" id="dlJson">Download JSON</button>
       </div>
-      <button class="btn primary" id="dlJsonl">Download JSONL for Intake Queue</button>
+      <button class="btn primary" id="dlJsonl">Download for Intake Queue</button>
       <button class="btn primary" id="exportText">Export to text</button>
-      <button class="btn secondary" id="copyCases">Copy case #s</button>
-      <p class="sub">Case #s = comma-separated <code>C…</code> from <b>this phone</b> queue only.</p>
-      <p class="sub">JSONL = one capture per line for <code>returning-captures.jsonl</code> on the box. Phone queue does not auto-sync.</p>
-      <button class="btn secondary" id="dlFull">Download full backup JSON</button>
-      <button class="btn ghost" id="copyText">Copy text</button>
-      <button class="btn ghost" id="markExported">Mark exported to Oasis</button>
+      <button class="btn secondary" id="copyCases">Copy case numbers</button>
       <p class="okmsg hidden" id="msg"></p>
       <p class="err hidden" id="err"></p>
       <textarea id="copyBox" class="hidden" readonly></textarea>
 
       <h2 style="font-size:16px;margin:20px 0 4px">Queue rows</h2>
-      <p class="sub" style="margin-bottom:0">Time · mode · case · name · phone</p>
       <div id="tableWrap"></div>
 
       <div class="danger-zone">
-        <h2>Clear list</h2>
-        <p class="sub"><b>Active list</b> = what Returning shows (<code>mb-pantry-queue</code>). Clearing it does <b>not</b> wipe full backup history (right count). Export first.</p>
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0 12px">
-          <input type="checkbox" id="onlyExported"> Clear only rows marked exported
-        </label>
-        <button class="btn danger" id="clear1">Clear active list…</button>
-        <button class="btn danger hidden" id="clear2">Really clear active list now</button>
+        <h2>Clear queue</h2>
+        <p class="sub">Clears the active list on this phone (what Returning shows).</p>
+        <button class="btn danger" id="clear1">Clear queue…</button>
+        <button class="btn danger hidden" id="clear2">Really clear queue now</button>
         <button class="btn ghost hidden" id="clearCancel">Cancel</button>
-        <hr style="border:0;border-top:1px dashed #f5c6c6;margin:16px 0">
-        <p class="sub">Only if you also want the right-hand <b>Full backup</b> count at zero:</p>
-        <button class="btn danger" id="clearBak1">Clear full backup history too…</button>
-        <button class="btn danger-fill hidden" id="clearBak2">Really wipe ALL backup history</button>
-        <button class="btn ghost hidden" id="clearBakCancel">Cancel backup wipe</button>
       </div>
     </main>
   </div>
@@ -120,7 +99,6 @@
 const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
-const EXPORTED_KEY = 'mb-pantry-exported-ids';
 
 const $ = (id) => document.getElementById(id);
 
@@ -130,16 +108,6 @@ function load(key) {
 }
 function save(key, arr) {
   localStorage.setItem(key, JSON.stringify(arr));
-}
-function loadExported() {
-  try { return new Set(JSON.parse(localStorage.getItem(EXPORTED_KEY) || '[]')); }
-  catch (_) { return new Set(); }
-}
-function saveExported(set) {
-  localStorage.setItem(EXPORTED_KEY, JSON.stringify([...set]));
-}
-function rowId(r) {
-  return (r.at || '') + '|' + (r.case || '') + '|' + (r.mode || '') + '|' + (r.phone || '');
 }
 function fmtTime(iso) {
   if (!iso) return '—';
@@ -188,16 +156,17 @@ function download(filename, text, mime) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
 function esc(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
 }
-function csvEscape(s) {
-  const t = String(s == null ? '' : s);
-  if (/[",\n\r]/.test(t)) return '"' + t.replace(/"/g,'""') + '"';
-  return t;
+function csvEscape(v) {
+  const s = String(v == null ? '' : v);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
 }
 function toCsv(rows) {
-  const cols = ['at','mode','case','name','phone','amount','unit','category','print','dob','hh','address','income','barcode'];
+  const cols = ['at','case','name','barcode','staff','matched','mode','source','ver'];
   const lines = [cols.join(',')];
   rows.forEach(r => lines.push(cols.map(c => csvEscape(r[c])).join(',')));
   return lines.join('\n');
@@ -217,33 +186,23 @@ function flash(ok, text, big) {
     $('err').classList.remove('hidden');
   }
 }
-function resetClearActiveUI() {
+function resetClearUI() {
   $('clear1').classList.remove('hidden');
   $('clear2').classList.add('hidden');
   $('clearCancel').classList.add('hidden');
 }
-function resetClearBakUI() {
-  $('clearBak1').classList.remove('hidden');
-  $('clearBak2').classList.add('hidden');
-  $('clearBakCancel').classList.add('hidden');
-}
 
 function render() {
   const q = load(QUEUE_KEY);
-  const b = load(BACKUP_KEY);
-  const exported = loadExported();
   $('qCount').textContent = q.length;
-  $('bCount').textContent = b.length;
   const wrap = $('tableWrap');
   if (!q.length) {
-    wrap.innerHTML = '<p class="empty">Queue empty. Confirm visits on Returning or New to fill it.</p>';
+    wrap.innerHTML = '<p class="empty">Active list empty.</p>';
     return;
   }
   const rows = q.slice().reverse().map(r => {
-    const id = rowId(r);
-    const flagged = exported.has(id);
     return '<tr>' +
-      '<td>' + esc(fmtTime(r.at)) + (flagged ? ' <span class="flag">exported</span>' : '') + '</td>' +
+      '<td>' + esc(fmtTime(r.at)) + '</td>' +
       '<td><span class="mode">' + esc(r.mode || '') + '</span></td>' +
       '<td><b>' + esc(r.case || '—') + '</b></td>' +
       '<td>' + esc(r.name || '—') + '</td>' +
@@ -265,152 +224,76 @@ $('gateGo').onclick = () => {
 
 $('dlCsv').onclick = () => {
   const q = load(QUEUE_KEY);
-  if (!q.length) { flash(false, 'Queue is empty.'); return; }
+  if (!q.length) { flash(false, 'Active list empty.'); return; }
   download('pantry-queue-' + stamp() + '.csv', toCsv(q), 'text/csv');
   flash(true, 'CSV downloaded (' + q.length + ' rows).');
 };
+$('dlJson').onclick = () => {
+  const q = load(QUEUE_KEY);
+  if (!q.length) { flash(false, 'Active list empty.'); return; }
+  download('pantry-queue-' + stamp() + '.json', JSON.stringify(q, null, 2), 'application/json');
+  flash(true, 'JSON downloaded (' + q.length + ' rows).');
+};
 $('dlJsonl').onclick = () => {
   const q = load(QUEUE_KEY);
-  if (!q.length) { flash(false, 'Queue empty'); return; }
+  if (!q.length) { flash(false, 'Active list empty.'); return; }
   const st = stamp();
   const jsonl = q.map(r => JSON.stringify(r)).join('\n') + '\n';
   const para = caseParagraphFromRows(q);
   download('returning-captures-' + st + '.jsonl', jsonl, 'application/x-ndjson');
   download('case-numbers-' + st + '.txt', para + '\n', 'text/plain');
-  flash(true, 'Downloaded JSONL + case-numbers.txt (' + q.length + ' rows). This phone only.');
+  flash(true, 'Downloaded for Intake Queue (' + q.length + ' rows) + case numbers.');
 };
 $('exportText').onclick = () => {
   const q = load(QUEUE_KEY);
-  if (!q.length) { flash(false, 'Queue empty'); return; }
+  if (!q.length) { flash(false, 'Active list empty.'); return; }
   const para = caseParagraphFromRows(q);
   const lines = ['Returning captures', 'Cases: ' + para, 'Count: ' + q.length, ''];
   q.forEach((r,i) => lines.push((i+1)+'. '+normalizeCaseNum(r)+' · '+(r.name||'—')+' · '+(r.staff||'')+' · '+(r.at||'')));
   const st = stamp();
   download('returning-export-'+st+'.txt', lines.join('\n')+'\n', 'text/plain');
   download('case-numbers-'+st+'.txt', para+'\n', 'text/plain');
-  flash(true, 'Exported text + case-numbers.txt');
+  flash(true, 'Exported text + case numbers.');
 };
 $('copyCases').onclick = async () => {
   const q = load(QUEUE_KEY);
   const para = caseParagraphFromRows(q);
-  if (!para) { flash(false, 'No case #s in this phone queue'); return; }
+  if (!para) { flash(false, 'No case numbers in active list'); return; }
   try {
     await navigator.clipboard.writeText(para);
     flash(true, 'Copied: ' + para);
-  } catch (e) {
-    try { window.prompt('Copy case #s:', para); } catch (_) {}
-    flash(false, 'Clipboard blocked — use prompt/manual copy');
-  }
-  $('copyBox').value = para;
-  $('copyBox').classList.remove('hidden');
-};
-$('dlJson').onclick = () => {
-  const q = load(QUEUE_KEY);
-  if (!q.length) { flash(false, 'Queue is empty.'); return; }
-  download('pantry-queue-' + stamp() + '.json', JSON.stringify(q, null, 2), 'application/json');
-  flash(true, 'Queue JSON downloaded (' + q.length + ' rows).');
-};
-$('dlFull').onclick = () => {
-  const b = load(BACKUP_KEY);
-  if (!b.length) { flash(false, 'Full backup is empty.'); return; }
-  download('pantry-backup-full-' + stamp() + '.json', JSON.stringify(b, null, 2), 'application/json');
-  flash(true, 'Full backup JSON downloaded (' + b.length + ' rows).');
-};
-$('copyText').onclick = async () => {
-  const q = load(QUEUE_KEY);
-  if (!q.length) { flash(false, 'Queue is empty.'); return; }
-  const text = q.map(r =>
-    [fmtTime(r.at), r.mode, r.case, r.name, r.phone].join('\t')
-  ).join('\n');
-  $('copyBox').value = text;
-  $('copyBox').classList.remove('hidden');
-  try {
-    await navigator.clipboard.writeText(text);
-    flash(true, 'Copied ' + q.length + ' rows to clipboard.');
   } catch (_) {
+    $('copyBox').value = para;
+    $('copyBox').classList.remove('hidden');
     $('copyBox').select();
     flash(true, 'Select/copy the text box below (clipboard blocked).');
   }
-};
-$('markExported').onclick = () => {
-  const q = load(QUEUE_KEY);
-  if (!q.length) { flash(false, 'Queue is empty.'); return; }
-  const set = loadExported();
-  q.forEach(r => set.add(rowId(r)));
-  saveExported(set);
-  render();
-  flash(true, 'Marked ' + q.length + ' queue rows as exported to Oasis. Queue not deleted — clear only after you confirm.');
 };
 
 $('clear1').onclick = () => {
   $('clear1').classList.add('hidden');
   $('clear2').classList.remove('hidden');
   $('clearCancel').classList.remove('hidden');
-  flash(false, 'Confirm: clear ACTIVE list only. Full backup count (right) stays until you wipe backup separately.');
+  flash(false, 'Tap Really clear to empty the active list on this phone.');
 };
 $('clearCancel').onclick = () => {
-  resetClearActiveUI();
+  resetClearUI();
   flash(true, 'Clear cancelled.');
 };
 $('clear2').onclick = () => {
-  const only = $('onlyExported').checked;
   const q = load(QUEUE_KEY);
-  if (!q.length) {
-    flash(false, 'Active list already empty (0). If the backup count is still high, that is normal — use “Clear full backup history too” below.', true);
-    resetClearActiveUI();
-    render();
-    return;
-  }
-  if (only) {
-    const exported = loadExported();
-    const kept = q.filter(r => !exported.has(rowId(r)));
-    const removed = q.length - kept.length;
-    if (!removed) {
-      flash(false, 'Nothing cleared — “only exported” is checked but 0 rows are marked exported. Uncheck that box, then clear again.', true);
-      resetClearActiveUI();
-      return;
-    }
-    save(QUEUE_KEY, kept);
-    flash(true, 'Active list updated — ' + removed + ' cleared, ' + kept.length + ' remain. Backup history untouched (' + load(BACKUP_KEY).length + ').', true);
-  } else {
-    const n = q.length;
-    save(QUEUE_KEY, []);
-    flash(true, 'Active list empty — ' + n + ' cleared. Backup history still has ' + load(BACKUP_KEY).length + ' (clear separately if you want that at 0).', true);
-  }
-  // leave onlyExported unchecked after a successful full clear
-  if (!only) $('onlyExported').checked = false;
-  resetClearActiveUI();
+  const n = q.length;
+  save(QUEUE_KEY, []);
+  flash(true, 'Active list empty — ' + n + ' cleared.', true);
+  resetClearUI();
   render();
 };
 
-$('clearBak1').onclick = () => {
-  $('clearBak1').classList.add('hidden');
-  $('clearBak2').classList.remove('hidden');
-  $('clearBakCancel').classList.remove('hidden');
-  flash(false, 'WARNING: this wipes FULL backup history on this phone (mb-pantry-backup). Active list is separate. Tap Really to confirm.');
-};
-$('clearBakCancel').onclick = () => {
-  resetClearBakUI();
-  flash(true, 'Backup wipe cancelled.');
-};
-$('clearBak2').onclick = () => {
-  const b = load(BACKUP_KEY);
-  const n = b.length;
-  save(BACKUP_KEY, []);
-  flash(true, 'Full backup history empty — ' + n + ' wiped. Active list still has ' + load(QUEUE_KEY).length + '.', true);
-  resetClearBakUI();
-  render();
-};
-
-// Ensure onlyExported starts unchecked each open
-$('onlyExported').checked = false;
-
-// Live refresh if another tab writes; also on pageshow/focus
 function maybeRender() {
   if (!$('app').classList.contains('hidden')) render();
 }
 window.addEventListener('storage', (e) => {
-  if (e.key === QUEUE_KEY || e.key === BACKUP_KEY || e.key === EXPORTED_KEY) maybeRender();
+  if (e.key === QUEUE_KEY || e.key === BACKUP_KEY) maybeRender();
 });
 window.addEventListener('pageshow', maybeRender);
 window.addEventListener('focus', maybeRender);
