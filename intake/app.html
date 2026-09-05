@@ -41,6 +41,10 @@
   .snap-result.warn { background:#fff3cd; color:#856404; border:2px solid #ffc107; }
   .snap-result.err { background:#fdecea; color:var(--warn); border:2px solid #e74c3c; }
   .snap-result .subline { display:block; font-size:13px; font-weight:600; margin-top:6px; opacity:.9; }
+  .more-toggle { display:block; width:100%; margin-top:14px; background:transparent; border:0; color:var(--muted);
+    font-size:13px; font-weight:600; padding:8px; cursor:pointer; text-align:center; }
+  .more-line { display:none; margin-top:4px; padding-top:8px; border-top:1px solid #eee; }
+  .more-line.open { display:block; }
   .dbg { display:none; } /* line-day: hide dbg unless toggled */
   .btn.secondary { background:#fff; color:var(--g); border:2px solid var(--g); }
   .btn.ghost { background:#eee; color:#333; }
@@ -77,6 +81,9 @@
   .err { color:var(--warn); font-size:14px; margin:8px 0; }
   .list button.match { text-align:left; width:100%; background:#fff; border:1px solid #ddd; border-radius:12px; padding:12px; margin:8px 0; cursor:pointer; }
   .gate { padding:40px 16px; }
+  #staffPick { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .staff-pick.selected { background:var(--g); color:#fff; border-color:var(--g); }
+  .btn.export-text { background:#0d5c2e; color:#fff; margin-top:10px; font-size:17px; padding:16px; }
   .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
   .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:10px; }
 
@@ -94,11 +101,26 @@
 <div class="wrap">
   <div id="gate" class="gate">
     <h1>Returning line</h1>
-    <p class="sub">Staff only. Enter passcode.</p>
-    <input id="pass" type="password" placeholder="Passcode" autocomplete="current-password">
-    <button class="btn primary" id="gateGo">Open app</button>
-    <p class="err hidden" id="gateErr">Wrong passcode</p>
-    <p class="qcount hidden" id="gateQueueHint"></p>
+    <div id="gatePassStep">
+      <p class="sub">Staff only. Enter shared passcode.</p>
+      <input id="pass" type="password" placeholder="Passcode" autocomplete="current-password">
+      <button class="btn primary" id="gateGo">Continue</button>
+      <p class="err hidden" id="gateErr">Wrong passcode</p>
+    </div>
+    <div id="gateStaffStep" class="hidden">
+      <p class="sub">Who is using <b>this phone</b>? (each phone keeps its own queue)</p>
+      <div class="row2" id="staffPick" style="margin:12px 0">
+        <button type="button" class="btn secondary staff-pick" data-staff="Aida">Aida</button>
+        <button type="button" class="btn secondary staff-pick" data-staff="Peter">Peter</button>
+        <button type="button" class="btn secondary staff-pick" data-staff="Yohan">Yohan</button>
+        <button type="button" class="btn secondary staff-pick" data-staff="Ruth">Ruth</button>
+        <button type="button" class="btn secondary staff-pick" data-staff="Pedro">Pedro</button>
+      </div>
+      <input id="staffCustom" type="text" placeholder="Or type your name" autocomplete="name" style="width:100%;font-size:18px;padding:14px;border:1px solid #ccc;border-radius:12px;margin:8px 0 12px">
+      <button class="btn primary" id="gateStaffGo">Start line</button>
+      <p class="err hidden" id="gateStaffErr">Enter or pick your name</p>
+      <p class="qcount hidden" id="gateQueueHint"></p>
+    </div>
   </div>
 
   <div id="app" class="hidden">
@@ -106,14 +128,14 @@
       <span class="badge">RETURNING</span>
       <div class="hdr-right">
         <span class="staff" id="staffLabel">Miami Bethany</span>
-        <a class="bak-link" href="backup.html">Backup / export</a>
+        <a class="bak-link" href="backup.html" id="bakLink">Export queue →</a>
         <span class="qcount" id="queueCount"></span>
       </div>
     </header>
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Photo-of-card line path (v20260905c). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905c.</p>
+        <p class="sub">Photo-of-card line path (v20260905e). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905e.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
@@ -122,26 +144,32 @@
         <canvas id="scanCanvas" class="hidden" aria-hidden="true"></canvas>
         <button class="btn snap" id="snapCardBtn" type="button">Snap ID barcode</button>
         <div class="snap-result" id="snapResult" aria-live="polite"></div>
+        <button class="btn export-text" id="exportTextBtn" type="button">Export to text</button>
+        <button class="btn secondary" id="copyCasesBtn" type="button" style="margin-top:8px">Copy case #s</button>
+        <button class="btn secondary" id="exportQueueBtn" type="button" style="margin-top:8px">Download JSONL + case-numbers.txt</button>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260905c — Frame → Snap → big green SAVED → next person.</p>
+        <p class="hint" id="scanHint">v20260905e — Frame → Snap → SAVED → Copy case #s / Download JSONL (this phone only).</p>
         <pre class="dbg" id="scanDbg" style="display:none">dbg: waiting…</pre>
-        <button class="btn torch" id="torchBtn" disabled>Torch</button>
-        <div class="row2" style="margin-top:10px">
-          <button class="btn secondary" id="retryCam">Retry camera</button>
-          <button class="btn secondary" id="photoTestBtn">Camera roll / file</button>
-        </div>
         <input id="photoPick" type="file" accept="image/*" capture="environment">
-        <div class="row2">
-          <button class="btn secondary" id="toggleDbg">Hide debug</button>
-          <button class="btn secondary" id="toManual">Type #</button>
+        <button type="button" class="more-toggle" id="moreToggle">More ▾</button>
+        <div class="more-line" id="moreLine">
+          <button class="btn torch" id="torchBtn" disabled>Torch</button>
+          <div class="row2" style="margin-top:10px">
+            <button class="btn secondary" id="retryCam">Retry camera</button>
+            <button class="btn secondary" id="photoTestBtn">Camera roll / file</button>
+          </div>
+          <div class="row2">
+            <button class="btn secondary" id="toggleDbg">Show debug</button>
+            <button class="btn secondary" id="toManual">Type #</button>
+          </div>
+          <button class="btn secondary" id="toPhone" style="margin-top:10px">Search by phone</button>
+          <a class="tiny-link" id="showTestBarcode" href="#">show test barcode (00378814)</a>
+          <div id="testBarcodeBox" class="hidden">
+            <img id="testBarcodeImg" alt="Code-128 00378814" src="test-barcode.png">
+            <p class="hint">Use Snap ID barcode on this Code-128 (00378814 / Ana Ramos).</p>
+          </div>
+          <p class="hint">Emergency only: Type # / phone. Line day = Snap.</p>
         </div>
-        <button class="btn secondary" id="toPhone" style="margin-top:10px">Search by phone</button>
-        <a class="tiny-link" id="showTestBarcode" href="#">show test barcode (00378814)</a>
-        <div id="testBarcodeBox" class="hidden">
-          <img id="testBarcodeImg" alt="Code-128 00378814" src="test-barcode.png">
-          <p class="hint">Use Snap ID barcode on this Code-128 (00378814 / Ana Ramos).</p>
-        </div>
-        <p class="hint">Line day = Snap ID barcode (still frame). Type # / phone = emergency only.</p>
       </section>
 
       <section id="screen-manual" class="hidden">
@@ -203,7 +231,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260905c';
+const VER = 'v20260905e';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -514,6 +542,127 @@ function refreshQueueCount() {
   }
 }
 
+
+
+function normalizeCaseNum(row) {
+  let c = String((row && row.case) || '').trim().toUpperCase();
+  if (c && !c.startsWith('C')) {
+    const d = c.replace(/\D/g, '');
+    if (d) c = 'C' + d.replace(/^0+/, '') || ('C' + d);
+  }
+  if (!c || c === 'C') {
+    const bc = String((row && row.barcode) || '').replace(/\D/g, '');
+    if (bc) {
+      const stripped = bc.replace(/^0+/, '') || bc;
+      c = 'C' + stripped;
+    }
+  }
+  if (!c || c === 'C') return '';
+  // Prefer C + digits only
+  const m = c.match(/^C0*(\d+)$/);
+  if (m) return 'C' + m[1];
+  return c;
+}
+
+function caseParagraphFromRows(rows) {
+  const seen = new Set();
+  const out = [];
+  (rows || []).forEach(r => {
+    const c = normalizeCaseNum(r);
+    if (!c || seen.has(c)) return;
+    seen.add(c);
+    out.push(c);
+  });
+  return out.join(', ');
+}
+
+function loadQueueRows() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); }
+  catch (_) { return []; }
+}
+
+async function copyCaseParagraph() {
+  const para = caseParagraphFromRows(loadQueueRows());
+  if (!para) {
+    showSnapResult('warn', 'No case #s on this phone yet', 'Snap captures first (each phone has its own list)');
+    return false;
+  }
+  try {
+    await navigator.clipboard.writeText(para);
+    showSnapResult('ok', 'Case #s copied', para);
+    setDbg({ note: 'copied cases: ' + para.slice(0, 120) });
+    return true;
+  } catch (e) {
+    // Fallback: select in prompt
+    try { window.prompt('Copy case #s:', para); } catch (_) {}
+    showSnapResult('warn', 'Copy manually', para);
+    return false;
+  }
+}
+
+
+function exportQueueText() {
+  const rows = loadQueueRows();
+  if (!rows.length) {
+    showSnapResult('warn', 'Nothing to export on this phone', 'Snap captures first');
+    return false;
+  }
+  const para = caseParagraphFromRows(rows);
+  const staff = staffForCapture() || '(no staff set)';
+  const lines = [];
+  lines.push('Returning captures — ' + staff);
+  lines.push('Cases: ' + (para || '(none)'));
+  lines.push('Count: ' + rows.length);
+  lines.push('');
+  rows.forEach((r, i) => {
+    lines.push((i+1) + '. ' + normalizeCaseNum(r) + ' · ' + (r.name || '—') + ' · ' + (r.barcode || '') + ' · ' + (r.at || ''));
+  });
+  const text = lines.join('\n') + '\n';
+  const stamp = exportStamp();
+  downloadBlob('returning-export-' + stamp + '.txt', text, 'text/plain');
+  downloadBlob('case-numbers-' + stamp + '.txt', (para || '') + '\n', 'text/plain');
+  // also try clipboard of case paragraph for paste
+  if (para && navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(para).catch(() => {});
+  }
+  showSnapResult('ok', 'Exported text + case #s (' + rows.length + ')', para || 'See downloaded .txt');
+  setDbg({ note: 'export to text ' + rows.length + ' staff=' + staff });
+  return true;
+}
+
+function downloadBlob(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+
+function exportStamp() {
+  const d = new Date();
+  const p2 = (x) => String(x).padStart(2, '0');
+  return d.getFullYear() + p2(d.getMonth()+1) + p2(d.getDate()) + '-' + p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds());
+}
+
+function downloadQueueJsonl() {
+  const rows = loadQueueRows();
+  if (!rows.length) {
+    showSnapResult('warn', 'Queue empty on this phone', 'Snap someone first, then export');
+    return false;
+  }
+  const stamp = exportStamp();
+  const jsonl = rows.map(r => JSON.stringify(r)).join('\n') + '\n';
+  const para = caseParagraphFromRows(rows);
+  downloadBlob('returning-captures-' + stamp + '.jsonl', jsonl, 'application/x-ndjson');
+  downloadBlob('case-numbers-' + stamp + '.txt', para + '\n', 'text/plain');
+  const n = rows.length;
+  showSnapResult('ok', 'Downloaded JSONL + case-numbers.txt (' + n + ')', para || 'No case #s');
+  setDbg({ note: 'exported JSONL ' + n + ' + case paragraph' });
+  return true;
+}
+
 function stampName(caseNo, at) {
   const d = at ? new Date(at) : new Date();
   const pad = (x) => String(x).padStart(2,'0');
@@ -644,10 +793,23 @@ function sanitizeBarcodeText(raw) {
   return t.trim();
 }
 
+const STAFF_KEY = 'mb-pantry-staff';
+let currentStaff = '';
+
 function staffForCapture() {
+  const s = (currentStaff || localStorage.getItem(STAFF_KEY) || '').trim();
+  if (s) return s;
   const t = (($('staffLabel') && $('staffLabel').textContent) || '').trim();
-  if (!t || /cases loaded|missing|lookup/i.test(t)) return 'Miami Bethany';
+  if (!t || /cases loaded|missing|lookup|miami bethany/i.test(t)) return '';
   return t;
+}
+
+function setStaff(name) {
+  currentStaff = String(name || '').trim();
+  if (!currentStaff) return false;
+  localStorage.setItem(STAFF_KEY, currentStaff);
+  if ($('staffLabel')) $('staffLabel').textContent = currentStaff;
+  return true;
 }
 
 /** Capture-first: enqueue barcode immediately. Match is best-effort metadata only — never blocks the line. */
@@ -674,7 +836,7 @@ function captureScan(decoded, source) {
     case: caseGuess,
     name: hit ? (hit.name || '') : '',
     matched: !!hit,
-    staff: staffForCapture(),
+    staff: staffForCapture() || 'UNKNOWN',
     mode: 'capture-first',
     source: source || 'live',
     ver: VER
@@ -716,9 +878,11 @@ function flashCapture(row) {
     ? ((row.name || '') + ' · ' + (row.case || row.barcode))
     : ('CODE ' + row.barcode);
   const n = queueLen();
-  const qline = n + ' capture' + (n === 1 ? '' : 's') + ' saved on this phone';
+  const qline = n + ' capture' + (n === 1 ? '' : 's') + ' on this phone · tap Download JSONL for Intake';
   if (hint) hint.textContent = VER + ' — SAVED · ' + who;
-  showSnapResult('ok', '✓ SAVED — ' + who, qline + ' · Snap next person');
+  showSnapResult('ok', '✓ SAVED — ' + who, qline);
+  const et = $('exportTextBtn');
+  if (et) et.textContent = 'Export to text (' + n + ')';
   if (btn) {
     btn.textContent = 'Saved ✓ — Snap next';
     if (captureFlashTimer) clearTimeout(captureFlashTimer);
@@ -1261,14 +1425,9 @@ function openMatch(c) {
   show('screen-match');
 }
 
-$('gateGo').onclick = async () => {
-  if ($('pass').value !== PASS) {
-    $('gateErr').classList.remove('hidden');
-    return;
-  }
+async function enterAppAfterStaff() {
   $('gate').classList.add('hidden');
   $('app').classList.remove('hidden');
-  // User-gesture ZBar WASM warm-up (iOS Safari) before camera starts
   try {
     setDbg({ note: 'warming ZBar…' });
     await loadZBar();
@@ -1277,13 +1436,51 @@ $('gateGo').onclick = async () => {
     const res = await fetch('cases.json', { cache: 'no-store' });
     const data = await res.json();
     cases = data.cases || [];
-    $('staffLabel').textContent = data.count + ' cases loaded';
+    setDbg({ note: (data.count || cases.length) + ' cases loaded · staff ' + staffForCapture() });
   } catch (e) {
-    $('staffLabel').textContent = 'Lookup file missing';
+    setDbg({ note: 'Lookup file missing · staff ' + staffForCapture() });
   }
+  if ($('staffLabel')) $('staffLabel').textContent = staffForCapture() || 'Set staff';
   refreshQueueCount();
   show('screen-scan');
   startScan();
+}
+
+$('gateGo').onclick = () => {
+  if ($('pass').value !== PASS) {
+    $('gateErr').classList.remove('hidden');
+    return;
+  }
+  $('gateErr').classList.add('hidden');
+  $('gatePassStep').classList.add('hidden');
+  $('gateStaffStep').classList.remove('hidden');
+  const saved = (localStorage.getItem(STAFF_KEY) || '').trim();
+  if (saved) {
+    $('staffCustom').value = saved;
+    document.querySelectorAll('.staff-pick').forEach(b => {
+      b.classList.toggle('selected', b.getAttribute('data-staff') === saved);
+    });
+  }
+  refreshQueueCount();
+};
+
+document.querySelectorAll('.staff-pick').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.staff-pick').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    $('staffCustom').value = btn.getAttribute('data-staff') || '';
+  });
+});
+
+$('gateStaffGo').onclick = async () => {
+  const picked = document.querySelector('.staff-pick.selected');
+  const name = (($('staffCustom').value || '') || (picked && picked.getAttribute('data-staff')) || '').trim();
+  if (!setStaff(name)) {
+    $('gateStaffErr').classList.remove('hidden');
+    return;
+  }
+  $('gateStaffErr').classList.add('hidden');
+  await enterAppAfterStaff();
 };
 
 refreshQueueCount();
@@ -1483,6 +1680,19 @@ function grabPreviewFrame() {
   ctx.drawImage(video, 0, 0, c.width, c.height);
   return c;
 }
+
+
+$('exportTextBtn').onclick = () => { exportQueueText(); };
+$('exportQueueBtn').onclick = () => { downloadQueueJsonl(); };
+$('copyCasesBtn').onclick = () => { copyCaseParagraph(); };
+
+$('moreToggle').onclick = () => {
+  const box = $('moreLine');
+  const btn = $('moreToggle');
+  if (!box || !btn) return;
+  const open = box.classList.toggle('open');
+  btn.textContent = open ? 'More ▴' : 'More ▾';
+};
 
 $('snapCardBtn').onclick = async () => {
   const frame = grabPreviewFrame();
