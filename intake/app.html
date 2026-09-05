@@ -119,7 +119,7 @@
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Photo-of-card line path (v20260905f). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905f.</p>
+        <p class="sub">Photo-of-card line path (v20260905g). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905f.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
@@ -131,8 +131,12 @@
         <button class="btn export-text" id="exportTextBtn" type="button">Export to text</button>
         <button class="btn secondary" id="copyCasesBtn" type="button" style="margin-top:8px">Copy case #s</button>
         <button class="btn secondary" id="exportQueueBtn" type="button" style="margin-top:8px">Download JSONL + case-numbers.txt</button>
+        <div class="row2" style="margin-top:12px">
+          <button class="btn secondary" id="toPhone">Search by phone</button>
+          <button class="btn secondary" id="toManual">Type #</button>
+        </div>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260905f — Frame → Snap → SAVED → Copy case #s / Download JSONL (this phone only).</p>
+        <p class="hint" id="scanHint">v20260905g — Frame → Snap → SAVED · Search by phone / Type # / Export on this screen.</p>
         <pre class="dbg" id="scanDbg" style="display:none">dbg: waiting…</pre>
         <input id="photoPick" type="file" accept="image/*" capture="environment">
         <button type="button" class="more-toggle" id="moreToggle">More ▾</button>
@@ -142,17 +146,12 @@
             <button class="btn secondary" id="retryCam">Retry camera</button>
             <button class="btn secondary" id="photoTestBtn">Camera roll / file</button>
           </div>
-          <div class="row2">
-            <button class="btn secondary" id="toggleDbg">Show debug</button>
-            <button class="btn secondary" id="toManual">Type #</button>
-          </div>
-          <button class="btn secondary" id="toPhone" style="margin-top:10px">Search by phone</button>
+          <button class="btn secondary" id="toggleDbg" style="margin-top:10px">Show debug</button>
           <a class="tiny-link" id="showTestBarcode" href="#">show test barcode (00378814)</a>
           <div id="testBarcodeBox" class="hidden">
             <img id="testBarcodeImg" alt="Code-128 00378814" src="test-barcode.png">
             <p class="hint">Use Snap ID barcode on this Code-128 (00378814 / Ana Ramos).</p>
           </div>
-          <p class="hint">Emergency only: Type # / phone. Line day = Snap.</p>
         </div>
       </section>
 
@@ -215,7 +214,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260905f';
+const VER = 'v20260905g';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
