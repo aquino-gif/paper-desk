@@ -28,8 +28,14 @@
   .btnrow { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:8px 0; }
   .btnrow .btn { margin-top:0; }
   .hidden { display:none !important; }
-  .err { color:var(--warn); font-size:14px; margin:8px 0; }
-  .okmsg { color:var(--g); font-size:14px; margin:8px 0; }
+  .err { color:var(--warn); font-size:15px; margin:8px 0; font-weight:700; }
+  .okmsg { color:var(--g); font-size:15px; margin:8px 0; font-weight:700; }
+  .okmsg.big, .err.big {
+    display:block; padding:14px 16px; border-radius:12px; margin:12px 0; font-size:17px; line-height:1.35;
+  }
+  .okmsg.big { background:var(--g2); border:2px solid var(--g); color:#0d5c2e; }
+  .err.big { background:#fdecea; border:2px solid var(--warn); color:var(--warn); }
+  .btn.danger-fill { background:var(--warn); color:#fff; border:2px solid var(--warn); }
   .gate { padding:40px 16px; }
   input[type=password] {
     width:100%; font-size:18px; padding:14px; border:1px solid #ccc; border-radius:12px; margin:8px 0 12px;
@@ -65,7 +71,7 @@
     </header>
     <main>
       <h1>Desk queue</h1>
-      <p class="sub">Works fully offline from this device. Export before clearing. Full history stays in backup until you clear it.</p>
+      <p class="sub">Works fully offline (v20260905i). Export before clearing. Active list ≠ full backup — clear each separately.</p>
 
       <div class="counts">
         <div class="stat"><b id="qCount">0</b><span>Active queue<br><code>mb-pantry-queue</code></span></div>
@@ -93,14 +99,19 @@
       <div id="tableWrap"></div>
 
       <div class="danger-zone">
-        <h2>Clear queue</h2>
-        <p class="sub">Does not delete full backup history. End-of-day: export → Oasis write-back → only then clear.</p>
+        <h2>Clear list</h2>
+        <p class="sub"><b>Active list</b> = what Returning shows (<code>mb-pantry-queue</code>). Clearing it does <b>not</b> wipe full backup history (right count). Export first.</p>
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0 12px">
           <input type="checkbox" id="onlyExported"> Clear only rows marked exported
         </label>
-        <button class="btn danger" id="clear1">Clear queue…</button>
-        <button class="btn danger hidden" id="clear2">Really clear queue now</button>
+        <button class="btn danger" id="clear1">Clear active list…</button>
+        <button class="btn danger hidden" id="clear2">Really clear active list now</button>
         <button class="btn ghost hidden" id="clearCancel">Cancel</button>
+        <hr style="border:0;border-top:1px dashed #f5c6c6;margin:16px 0">
+        <p class="sub">Only if you also want the right-hand <b>Full backup</b> count at zero:</p>
+        <button class="btn danger" id="clearBak1">Clear full backup history too…</button>
+        <button class="btn danger-fill hidden" id="clearBak2">Really wipe ALL backup history</button>
+        <button class="btn ghost hidden" id="clearBakCancel">Cancel backup wipe</button>
       </div>
     </main>
   </div>
@@ -191,11 +202,30 @@ function toCsv(rows) {
   rows.forEach(r => lines.push(cols.map(c => csvEscape(r[c])).join(',')));
   return lines.join('\n');
 }
-function flash(ok, text) {
+function flash(ok, text, big) {
   $('msg').classList.add('hidden');
   $('err').classList.add('hidden');
-  if (ok) { $('msg').textContent = text; $('msg').classList.remove('hidden'); }
-  else { $('err').textContent = text; $('err').classList.remove('hidden'); }
+  $('msg').classList.remove('big');
+  $('err').classList.remove('big');
+  if (ok) {
+    $('msg').textContent = text;
+    if (big) $('msg').classList.add('big');
+    $('msg').classList.remove('hidden');
+  } else {
+    $('err').textContent = text;
+    if (big) $('err').classList.add('big');
+    $('err').classList.remove('hidden');
+  }
+}
+function resetClearActiveUI() {
+  $('clear1').classList.remove('hidden');
+  $('clear2').classList.add('hidden');
+  $('clearCancel').classList.add('hidden');
+}
+function resetClearBakUI() {
+  $('clearBak1').classList.remove('hidden');
+  $('clearBak2').classList.add('hidden');
+  $('clearBakCancel').classList.add('hidden');
 }
 
 function render() {
@@ -316,22 +346,19 @@ $('clear1').onclick = () => {
   $('clear1').classList.add('hidden');
   $('clear2').classList.remove('hidden');
   $('clearCancel').classList.remove('hidden');
-  flash(false, 'Tap again to confirm clear. This does not wipe mb-pantry-backup.');
+  flash(false, 'Confirm: clear ACTIVE list only. Full backup count (right) stays until you wipe backup separately.');
 };
 $('clearCancel').onclick = () => {
-  $('clear1').classList.remove('hidden');
-  $('clear2').classList.add('hidden');
-  $('clearCancel').classList.add('hidden');
+  resetClearActiveUI();
   flash(true, 'Clear cancelled.');
 };
 $('clear2').onclick = () => {
   const only = $('onlyExported').checked;
   const q = load(QUEUE_KEY);
   if (!q.length) {
-    flash(false, 'Queue already empty.');
-    $('clear1').classList.remove('hidden');
-    $('clear2').classList.add('hidden');
-    $('clearCancel').classList.add('hidden');
+    flash(false, 'Active list already empty (0). If the backup count is still high, that is normal — use “Clear full backup history too” below.', true);
+    resetClearActiveUI();
+    render();
     return;
   }
   if (only) {
@@ -339,27 +366,55 @@ $('clear2').onclick = () => {
     const kept = q.filter(r => !exported.has(rowId(r)));
     const removed = q.length - kept.length;
     if (!removed) {
-      flash(false, 'No rows marked exported. Mark exported first, or uncheck the filter.');
+      flash(false, 'Nothing cleared — “only exported” is checked but 0 rows are marked exported. Uncheck that box, then clear again.', true);
+      resetClearActiveUI();
       return;
     }
     save(QUEUE_KEY, kept);
-    flash(true, 'Cleared ' + removed + ' exported row(s). ' + kept.length + ' remain. Backup history kept.');
+    flash(true, 'Active list updated — ' + removed + ' cleared, ' + kept.length + ' remain. Backup history untouched (' + load(BACKUP_KEY).length + ').', true);
   } else {
+    const n = q.length;
     save(QUEUE_KEY, []);
-    flash(true, 'Active queue cleared (' + q.length + ' rows). Full backup history kept.');
+    flash(true, 'Active list empty — ' + n + ' cleared. Backup history still has ' + load(BACKUP_KEY).length + ' (clear separately if you want that at 0).', true);
   }
-  $('clear1').classList.remove('hidden');
-  $('clear2').classList.add('hidden');
-  $('clearCancel').classList.add('hidden');
+  // leave onlyExported unchecked after a successful full clear
+  if (!only) $('onlyExported').checked = false;
+  resetClearActiveUI();
   render();
 };
 
-// Live refresh if another tab writes
+$('clearBak1').onclick = () => {
+  $('clearBak1').classList.add('hidden');
+  $('clearBak2').classList.remove('hidden');
+  $('clearBakCancel').classList.remove('hidden');
+  flash(false, 'WARNING: this wipes FULL backup history on this phone (mb-pantry-backup). Active list is separate. Tap Really to confirm.');
+};
+$('clearBakCancel').onclick = () => {
+  resetClearBakUI();
+  flash(true, 'Backup wipe cancelled.');
+};
+$('clearBak2').onclick = () => {
+  const b = load(BACKUP_KEY);
+  const n = b.length;
+  save(BACKUP_KEY, []);
+  flash(true, 'Full backup history empty — ' + n + ' wiped. Active list still has ' + load(QUEUE_KEY).length + '.', true);
+  resetClearBakUI();
+  render();
+};
+
+// Ensure onlyExported starts unchecked each open
+$('onlyExported').checked = false;
+
+// Live refresh if another tab writes; also on pageshow/focus
+function maybeRender() {
+  if (!$('app').classList.contains('hidden')) render();
+}
 window.addEventListener('storage', (e) => {
-  if (e.key === QUEUE_KEY || e.key === BACKUP_KEY || e.key === EXPORTED_KEY) {
-    if (!$('app').classList.contains('hidden')) render();
-  }
+  if (e.key === QUEUE_KEY || e.key === BACKUP_KEY || e.key === EXPORTED_KEY) maybeRender();
 });
+window.addEventListener('pageshow', maybeRender);
+window.addEventListener('focus', maybeRender);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) maybeRender(); });
 </script>
 </body>
 </html>
