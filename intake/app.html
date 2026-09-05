@@ -35,6 +35,13 @@
   .btn.snap { background:var(--g); color:#fff; font-size:20px; padding:22px 16px; margin-top:12px;
     box-shadow:0 4px 14px rgba(26,159,75,.35); }
   .btn.snap:active { transform:scale(.98); }
+  .snap-result { margin-top:12px; border-radius:14px; padding:14px 16px; text-align:center; font-weight:700; font-size:16px; display:none; }
+  .snap-result.show { display:block; }
+  .snap-result.ok { background:var(--g2); color:#0d5c2e; border:2px solid var(--g); }
+  .snap-result.warn { background:#fff3cd; color:#856404; border:2px solid #ffc107; }
+  .snap-result.err { background:#fdecea; color:var(--warn); border:2px solid #e74c3c; }
+  .snap-result .subline { display:block; font-size:13px; font-weight:600; margin-top:6px; opacity:.9; }
+  .dbg { display:none; } /* line-day: hide dbg unless toggled */
   .btn.secondary { background:#fff; color:var(--g); border:2px solid var(--g); }
   .btn.ghost { background:#eee; color:#333; }
   .btn + .btn { margin-top:10px; }
@@ -106,7 +113,7 @@
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Photo-of-card line path (v20260905b). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905b.</p>
+        <p class="sub">Photo-of-card line path (v20260905c). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905c.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
@@ -114,9 +121,10 @@
         </div>
         <canvas id="scanCanvas" class="hidden" aria-hidden="true"></canvas>
         <button class="btn snap" id="snapCardBtn" type="button">Snap ID barcode</button>
+        <div class="snap-result" id="snapResult" aria-live="polite"></div>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260905b — Frame barcode → Snap → saved → next.</p>
-        <pre class="dbg" id="scanDbg">dbg: waiting…</pre>
+        <p class="hint" id="scanHint">v20260905c — Frame → Snap → big green SAVED → next person.</p>
+        <pre class="dbg" id="scanDbg" style="display:none">dbg: waiting…</pre>
         <button class="btn torch" id="torchBtn" disabled>Torch</button>
         <div class="row2" style="margin-top:10px">
           <button class="btn secondary" id="retryCam">Retry camera</button>
@@ -195,7 +203,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260905b';
+const VER = 'v20260905c';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -226,7 +234,7 @@ let boostCanvas = null;
 let boostCtx = null;
 const CROP_BANDS = [0.22, 0.28, 0.36, 0.48, 0.60];
 let dbg = { engine: '—', raw: '—', video: '—', crop: '—', note: '', zbar: 'N' };
-let dbgVisible = true;
+let dbgVisible = false;
 let zxingReadyPromise = null;
 let zbarApi = null;
 let zbarLoaded = false;
@@ -688,25 +696,39 @@ function captureScan(decoded, source) {
   return row;
 }
 
+function showSnapResult(kind, title, sub) {
+  const box = $('snapResult');
+  if (!box) return;
+  box.className = 'snap-result show ' + (kind || 'ok');
+  box.innerHTML = title + (sub ? ('<span class="subline">' + sub + '</span>') : '');
+}
+
 function flashCapture(row) {
   const hint = $('scanHint');
   const err = $('scanErr');
+  const btn = $('snapCardBtn');
   if (err) {
     err.textContent = '';
     err.classList.add('hidden');
   }
-  if (!hint || !row) return;
+  if (!row) return;
   const who = row.matched
     ? ((row.name || '') + ' · ' + (row.case || row.barcode))
     : ('CODE ' + row.barcode);
-  hint.textContent = VER + ' — Saved · ' + who + '. Next.';
+  const n = queueLen();
+  const qline = n + ' capture' + (n === 1 ? '' : 's') + ' saved on this phone';
+  if (hint) hint.textContent = VER + ' — SAVED · ' + who;
+  showSnapResult('ok', '✓ SAVED — ' + who, qline + ' · Snap next person');
+  if (btn) {
+    btn.textContent = 'Saved ✓ — Snap next';
+    if (captureFlashTimer) clearTimeout(captureFlashTimer);
+    captureFlashTimer = setTimeout(() => {
+      if ($('snapCardBtn') === btn) btn.textContent = 'Snap ID barcode';
+    }, 4000);
+  }
+  try { if (navigator.vibrate) navigator.vibrate(50); } catch (_) {}
+  refreshQueueCount();
   setDbg({ note: 'queued ' + row.barcode + (row.matched ? ' matched' : ' unmatched'), raw: row.barcode });
-  if (captureFlashTimer) clearTimeout(captureFlashTimer);
-  captureFlashTimer = setTimeout(() => {
-    if ($('scanHint') === hint && !$('screen-scan').classList.contains('hidden')) {
-      hint.textContent = VER + ' — Frame → Snap → saved → next.';
-    }
-  }, 1000);
 }
 
 function onDecoded(decoded, source) {
@@ -714,16 +736,24 @@ function onDecoded(decoded, source) {
   const rawIn = String(decoded || '');
   decoded = sanitizeBarcodeText(decoded);
   setDbg({ raw: rawIn + (decoded !== rawIn ? (' → ' + decoded) : ''), engine: source || dbg.engine });
-  if (!decoded) return;
-  // CAPTURE-FIRST: do not stopScan / openMatch / hold-to-confirm on live scan
+  if (!decoded) {
+    showSnapResult('err', 'Could not read barcode digits', 'Raw: ' + String(rawIn).slice(0, 40) + ' — try again closer');
+    return;
+  }
+  // CAPTURE-FIRST: do not stopScan / openMatch / hold-to-confirm on snap/live
   const row = captureScan(decoded, source || dbg.engine || 'live');
   if (row) {
     lastDecodeAt = Date.now();
     flashCapture(row);
-    // Keep camera live; if somehow stopped, resume
     if (!scanActive) {
       try { startScan(); } catch (_) {}
     }
+  } else {
+    // Likely dup debounce — still tell Pedro something happened
+    const n = queueLen();
+    showSnapResult('warn', 'Already saved just now · CODE ' + decoded, (n ? (n + ' on phone · ') : '') + 'Wait 2s or Snap a different card');
+    if ($('scanHint')) $('scanHint').textContent = VER + ' — Already saved · ' + decoded;
+    setDbg({ note: 'dup or empty captureScan for ' + decoded });
   }
 }
 
@@ -1203,7 +1233,7 @@ async function startScan() {
     if (nativeDetector) engParts.push('BD');
     if (zbarLoaded) engParts.push('zbar');
     const eng = engParts.length ? engParts.join('+') : 'loading';
-    $('scanHint').textContent = VER + ' — Frame barcode, tap Snap (' + eng + ' still).';
+    $('scanHint').textContent = VER + ' — Frame, tap Snap (' + eng + '). Green SAVED = done.';
     setDbg({ note: 'photo-of-card line path | preview only | still decode: ZXing→BD→ZBar | ' + eng });
   } catch (e) {
     const msg = (e && (e.message || e.name || String(e))) || 'unknown';
@@ -1416,11 +1446,11 @@ async function decodeStillImage(imgOrCanvas) {
 
 async function decodeStillAndCapture(imgOrCanvas, sourceTag) {
   $('scanErr').classList.add('hidden');
+  showSnapResult('warn', 'Reading barcode…', 'Hold still');
   setDbg({ engine: sourceTag || 'snap', note: 'decoding still…' });
   try {
     const text = await decodeStillImage(imgOrCanvas);
     if (text) {
-      // Force allow capture even if preview not yet marked active
       const prev = scanActive;
       if (!scanActive) scanActive = true;
       onDecoded(text, sourceTag || 'snap');
@@ -1428,12 +1458,14 @@ async function decodeStillAndCapture(imgOrCanvas, sourceTag) {
       return true;
     }
     const msg = 'No barcode in that snap. Fill the green box, hold steady, Snap again.';
+    showSnapResult('err', 'No barcode found', msg);
     $('scanErr').textContent = msg;
     $('scanErr').classList.remove('hidden');
     setDbg({ note: msg });
     return false;
   } catch (e) {
     const msg = 'Snap decode failed: ' + ((e && e.message) || e);
+    showSnapResult('err', 'Snap failed', msg);
     $('scanErr').textContent = msg;
     $('scanErr').classList.remove('hidden');
     return false;
@@ -1490,7 +1522,7 @@ $('photoPick').onchange = async (ev) => {
 $('toggleDbg').onclick = () => {
   dbgVisible = !dbgVisible;
   const el = $('scanDbg');
-  if (el) el.style.display = dbgVisible ? '' : 'none';
+  if (el) el.style.display = dbgVisible ? 'block' : 'none';
   $('toggleDbg').textContent = dbgVisible ? 'Hide debug' : 'Show debug';
 };
 $('showTestBarcode').onclick = (ev) => {
