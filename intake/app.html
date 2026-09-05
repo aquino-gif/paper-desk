@@ -103,7 +103,7 @@
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Point the green strip at the Oasis Code-128. Hard refresh ?v=20260903i if camera was stuck. ZBar ESM/inlined primary.</p>
+        <p class="sub">Point the green strip at the Oasis Code-128. Hard refresh ?v=20260904d if camera was stuck. ZXing primary + ZBar packed fallback.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
@@ -111,7 +111,7 @@
         </div>
         <canvas id="scanCanvas" class="hidden" aria-hidden="true"></canvas>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260903i — Allow camera. Hold Oasis Code-128 flat in the green strip.</p>
+        <p class="hint" id="scanHint">v20260904d — Allow camera. Hold Oasis Code-128 flat in the green strip.</p>
         <pre class="dbg" id="scanDbg">dbg: waiting…</pre>
         <button class="btn torch" id="torchBtn" disabled>Torch</button>
         <div class="row2" style="margin-top:10px">
@@ -191,7 +191,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260904b';
+const VER = 'v20260904d';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -265,14 +265,14 @@ async function loadZBar() {
   if (zbarLoadPromise) return zbarLoadPromise;
   zbarLoadPromise = (async () => {
     const tryBases = [];
-    // Prefer inlined ESM (no separate .wasm MIME/CORS) then sibling-wasm ESM
-    if (typeof ZBAR_CDN === 'string' && ZBAR_CDN) {
-      tryBases.push(ZBAR_CDN.replace(/\/$/, '') + '/inlined');
-      tryBases.push(ZBAR_CDN.replace(/\/$/, ''));
-    }
+    // Prefer LOCAL vendor first, then CDN
     if (typeof ZBAR_LOCAL === 'string' && ZBAR_LOCAL) {
       tryBases.push(ZBAR_LOCAL.replace(/\/$/, '') + '/inlined');
       tryBases.push(ZBAR_LOCAL.replace(/\/$/, ''));
+    }
+    if (typeof ZBAR_CDN === 'string' && ZBAR_CDN) {
+      tryBases.push(ZBAR_CDN.replace(/\/$/, '') + '/inlined');
+      tryBases.push(ZBAR_CDN.replace(/\/$/, ''));
     }
     let lastErr = null;
     for (let ui = 0; ui < tryBases.length; ui++) {
@@ -349,21 +349,43 @@ async function decodeWithZBar(canvas) {
     const ctx = canvas.getContext("2d", { willReadFrequently: true }) || canvas.getContext("2d");
     if (!ctx) return "";
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const packed = new Uint8Array(imageData.data.byteLength);
-    packed.set(imageData.data);
+    // iOS Safari ImageData / Uint8Array.from may still back onto an oversized
+    // ArrayBuffer. zbar-wasm requires buffer.byteLength === width*height*4.
+    const need = canvas.width * canvas.height * 4;
+    const src = imageData.data;
+    const packed = new Uint8Array(need);
+    packed.set(src.subarray(0, Math.min(src.byteLength, need)));
+    const exact = (packed.byteOffset === 0 && packed.buffer.byteLength === need)
+      ? packed.buffer
+      : packed.buffer.slice(packed.byteOffset, packed.byteOffset + need);
     let symbols = null;
+    let lastErr = '';
     if (zbarApi.scanRGBABuffer) {
-      symbols = await zbarApi.scanRGBABuffer(packed.buffer, canvas.width, canvas.height);
+      try {
+        symbols = await zbarApi.scanRGBABuffer(exact, canvas.width, canvas.height);
+      } catch (e1) {
+        lastErr = (e1 && (e1.message || e1.name)) || String(e1);
+        symbols = null;
+      }
     }
     if ((!symbols || !symbols.length) && zbarApi.scanImageData) {
-      try { symbols = await zbarApi.scanImageData({ width: canvas.width, height: canvas.height, data: packed }); } catch (e0) { symbols = null; }
+      try {
+        const clamped = new Uint8ClampedArray(exact);
+        symbols = await zbarApi.scanImageData({ width: canvas.width, height: canvas.height, data: clamped });
+      } catch (e0) {
+        lastErr = lastErr || ((e0 && (e0.message || e0.name)) || String(e0));
+        symbols = null;
+      }
     }
     if (symbols && symbols.length) {
       const s = symbols[0];
       if (s && typeof s.decode === "function") return s.decode();
       if (s && s.rawData != null) return String(s.rawData);
     }
-  } catch (_) {}
+    if (lastErr) setDbg({ note: 'ZBar: ' + String(lastErr).slice(0, 120) });
+  } catch (e) {
+    setDbg({ note: 'ZBar throw: ' + String((e && e.message) || e).slice(0, 120) });
+  }
   return "";
 }
 
@@ -919,18 +941,18 @@ async function zxingDecodeLoop(video) {
             video: info.vw + 'x' + info.vh,
             crop: info.band + ' @' + up + 'x ' + info.w + 'x' + info.h
           });
-          // 1) ZBar primary
-          text = await tryZBarOnCanvas(info.canvas, 'zbar-band' + info.band + '@' + up + 'x');
-          if (text) { engineHit = 'zbar'; break; }
-          // 2) native / polyfill BarcodeDetector
-          text = await tryNativeBDOnCanvas(info.canvas, 'BD-band' + info.band);
-          if (text) { engineHit = 'BarcodeDetector'; break; }
-          // 3) ZXing last
+          // 1) ZXing primary (iPhone Safari — ZBar often silent)
           if (hasZXing) {
             text = decodeVariants(info.canvas, fmt128, 'zxing-band' + info.band + '@' + up + 'x');
             if (!text) text = decodeVariants(info.canvas, fmtMulti, 'zxing-multi' + info.band + '@' + up + 'x');
             if (text) { engineHit = 'zxing'; break; }
           }
+          // 2) native / polyfill BarcodeDetector
+          text = await tryNativeBDOnCanvas(info.canvas, 'BD-band' + info.band);
+          if (text) { engineHit = 'BarcodeDetector'; break; }
+          // 3) ZBar packed fallback
+          text = await tryZBarOnCanvas(info.canvas, 'zbar-band' + info.band + '@' + up + 'x');
+          if (text) { engineHit = 'zbar'; break; }
         }
       }
       // Full-frame secondary
@@ -938,16 +960,18 @@ async function zxingDecodeLoop(video) {
         const full = drawFull(video, 1280);
         if (full) {
           setDbg({ crop: 'full' });
-          text = await tryZBarOnCanvas(full, 'zbar-full');
-          if (text) engineHit = 'zbar';
+          if (hasZXing) {
+            text = decodeVariants(full, fmt128, 'zxing-full');
+            if (!text) text = decodeVariants(full, fmtMulti, 'zxing-full-multi');
+            if (text) engineHit = 'zxing';
+          }
           if (!text) {
             text = await tryNativeBDOnCanvas(full, 'BD-full');
             if (text) engineHit = 'BarcodeDetector';
           }
-          if (!text && hasZXing) {
-            text = decodeVariants(full, fmt128, 'zxing-full');
-            if (!text) text = decodeVariants(full, fmtMulti, 'zxing-full-multi');
-            if (text) engineHit = 'zxing';
+          if (!text) {
+            text = await tryZBarOnCanvas(full, 'zbar-full');
+            if (text) engineHit = 'zbar';
           }
         }
       }
