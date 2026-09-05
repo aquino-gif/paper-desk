@@ -118,14 +118,14 @@
       <span class="badge">RETURNING</span>
       <div class="hdr-right">
         <span class="staff" id="staffLabel">Miami Bethany</span>
-        <a class="bak-link" href="backup.html" id="bakLink">Export queue →</a>
+        <a class="bak-link" href="backup.html?v=20260905i" id="bakLink">Export queue →</a>
         <span class="qcount" id="queueCount"></span>
       </div>
     </header>
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Photo-of-card line path (v20260905h). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905h.</p>
+        <p class="sub">Photo-of-card line path (v20260905i). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905h.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
@@ -143,7 +143,7 @@
           <button class="btn secondary" id="toManual">Type #</button>
         </div>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260905h — Snap → big Name · Case confirm · DIFFERENT ID alert if next card differs.</p>
+        <p class="hint" id="scanHint">v20260905i — Snap confirm · Clear active list on Backup (backup history is separate).</p>
         <pre class="dbg" id="scanDbg" style="display:none">dbg: waiting…</pre>
         <input id="photoPick" type="file" accept="image/*" capture="environment">
         <button type="button" class="more-toggle" id="moreToggle">More ▾</button>
@@ -211,7 +211,7 @@
           <p class="meta" id="doneWho"></p>
         </div>
         <button class="btn primary" id="again">Next person</button>
-        <a class="btn ghost" href="backup.html" style="text-align:center;text-decoration:none;margin-top:10px;display:block">Backup / export</a>
+        <a class="btn ghost" href="backup.html?v=20260905i" style="text-align:center;text-decoration:none;margin-top:10px;display:block">Backup / export</a>
       </section>
     </main>
   </div>
@@ -221,7 +221,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260905h';
+const VER = 'v20260905i';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -524,17 +524,21 @@ function queueLen() {
   try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]').length; } catch (_) { return 0; }
 }
 function refreshQueueCount() {
-  const n = queueLen();
+  const n = queueLen(); // active mb-pantry-queue only — not backup history
   const el = $('queueCount');
-  if (el) el.textContent = n ? (n + ' capture' + (n===1?'':'s') + ' saved') : '';
+  if (el) el.textContent = n ? (n + ' on active list') : 'Active list empty';
   const g = $('gateQueueHint');
   if (g) {
     if (n > 0) {
-      g.textContent = n + ' capture' + (n===1?'':'s') + ' saved on this device';
+      g.textContent = n + ' on active list (this phone)';
       g.classList.remove('hidden');
     } else {
       g.classList.add('hidden');
     }
+  }
+  const et = $('exportTextBtn');
+  if (et && !et.dataset.lockedLabel) {
+    et.textContent = n ? ('Export to text (' + n + ')') : 'Export to text';
   }
 }
 
@@ -1846,10 +1850,19 @@ $('wedge').addEventListener('keydown', (ev) => {
   $('wedge').value = '';
   if (v) onDecoded(v);
 });
-document.addEventListener('visibilitychange', () => {
+function refreshOnReturn() {
+  refreshQueueCount();
   if (!document.hidden && !$('app').classList.contains('hidden') && !$('screen-scan').classList.contains('hidden')) {
     focusWedge();
   }
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshOnReturn();
+});
+window.addEventListener('pageshow', refreshOnReturn);
+window.addEventListener('focus', refreshOnReturn);
+window.addEventListener('storage', (e) => {
+  if (e.key === QUEUE_KEY || e.key === BACKUP_KEY) refreshQueueCount();
 });
 setInterval(() => {
   if ($('app').classList.contains('hidden')) return;
