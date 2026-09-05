@@ -118,14 +118,14 @@
       <span class="badge">RETURNING</span>
       <div class="hdr-right">
         <span class="staff" id="staffLabel">Miami Bethany</span>
-        <a class="bak-link" href="backup.html?v=20260905i" id="bakLink">Export queue →</a>
+        <a class="bak-link" href="backup.html?v=20260905j" id="bakLink">Export queue →</a>
         <span class="qcount" id="queueCount"></span>
       </div>
     </header>
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Photo-of-card line path (v20260905i). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905h.</p>
+        <p class="sub">Photo-of-card line path (v20260905j). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905h.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
@@ -136,14 +136,14 @@
         <div class="snap-result" id="snapResult" aria-live="polite"></div>
         <button class="btn undo" id="undoLastBtn" type="button">Undo last</button>
         <button class="btn export-text" id="exportTextBtn" type="button">Export to text</button>
-        <button class="btn secondary" id="copyCasesBtn" type="button" style="margin-top:8px">Copy case #s</button>
-        <button class="btn secondary" id="exportQueueBtn" type="button" style="margin-top:8px">Download JSONL + case-numbers.txt</button>
+        <button class="btn secondary" id="copyCasesBtn" type="button" style="margin-top:8px">Copy case numbers</button>
+        <button class="btn secondary" id="exportQueueBtn" type="button" style="margin-top:8px">Download for Intake Queue</button>
         <div class="row2" style="margin-top:12px">
           <button class="btn secondary" id="toPhone">Search by phone</button>
           <button class="btn secondary" id="toManual">Type #</button>
         </div>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260905i — Snap confirm · Clear active list on Backup (backup history is separate).</p>
+        <p class="hint" id="scanHint">v20260905j — Snap · Export / Copy / Intake download · Clear queue on Backup.</p>
         <pre class="dbg" id="scanDbg" style="display:none">dbg: waiting…</pre>
         <input id="photoPick" type="file" accept="image/*" capture="environment">
         <button type="button" class="more-toggle" id="moreToggle">More ▾</button>
@@ -211,7 +211,7 @@
           <p class="meta" id="doneWho"></p>
         </div>
         <button class="btn primary" id="again">Next person</button>
-        <a class="btn ghost" href="backup.html?v=20260905i" style="text-align:center;text-decoration:none;margin-top:10px;display:block">Backup / export</a>
+        <a class="btn ghost" href="backup.html?v=20260905j" style="text-align:center;text-decoration:none;margin-top:10px;display:block">Backup / export</a>
       </section>
     </main>
   </div>
@@ -221,7 +221,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260905i';
+const VER = 'v20260905j';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
