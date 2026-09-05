@@ -103,7 +103,7 @@
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Capture-first + BarcodeDetector-primary (iOS). ZXing second, ZBar last. Hard refresh ?v=20260904f.</p>
+        <p class="sub">Capture-first + ZXing CODE_128-primary (iOS live). BD parallel; ZBar off live. Hard refresh ?v=20260905a.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
@@ -111,7 +111,7 @@
         </div>
         <canvas id="scanCanvas" class="hidden" aria-hidden="true"></canvas>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260904f — BD-primary capture-first: scan → saved → next.</p>
+        <p class="hint" id="scanHint">v20260905a — ZXing-128-primary capture-first: scan → saved → next.</p>
         <pre class="dbg" id="scanDbg">dbg: waiting…</pre>
         <button class="btn torch" id="torchBtn" disabled>Torch</button>
         <div class="row2" style="margin-top:10px">
@@ -191,7 +191,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260904f';
+const VER = 'v20260905a';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -1031,6 +1031,14 @@ async function zxingDecodeLoop(video) {
       ] : null;
       let text = '';
       let engineHit = '';
+      // Fast path: ZXing from live video element first
+      if (hasZXing && zxingReader128) {
+        try {
+          const result = await zxingReader128.decodeOnceFromVideoElement(video);
+          text = textFromResult(result);
+          if (text) engineHit = 'zxing-video';
+        } catch (_) {}
+      }
       const scales = [2, 3];
       for (let si = 0; si < scales.length && !text; si++) {
         const up = scales[si];
@@ -1042,18 +1050,16 @@ async function zxingDecodeLoop(video) {
             video: info.vw + 'x' + info.vh,
             crop: info.band + ' @' + up + 'x ' + info.w + 'x' + info.h
           });
-          // 1) BarcodeDetector primary (iOS Safari native / polyfill)
-          text = await tryNativeBDOnCanvas(info.canvas, 'BD-band' + info.band);
-          if (text) { engineHit = 'BarcodeDetector'; break; }
-          // 2) ZXing second
+          // 1) ZXing CODE_128 primary (symptom B: live preview, no decode)
           if (hasZXing) {
             text = decodeVariants(info.canvas, fmt128, 'zxing-band' + info.band + '@' + up + 'x');
             if (!text) text = decodeVariants(info.canvas, fmtMulti, 'zxing-multi' + info.band + '@' + up + 'x');
             if (text) { engineHit = 'zxing'; break; }
           }
-          // 3) ZBar packed last
-          text = await tryZBarOnCanvas(info.canvas, 'zbar-band' + info.band + '@' + up + 'x');
-          if (text) { engineHit = 'zbar'; break; }
+          // 2) BarcodeDetector parallel/secondary
+          text = await tryNativeBDOnCanvas(info.canvas, 'BD-band' + info.band);
+          if (text) { engineHit = 'BarcodeDetector'; break; }
+          // 3) ZBar SKIPPED on live iOS path (frame cost / ImageData risk)
         }
       }
       // Full-frame secondary
@@ -1061,25 +1067,17 @@ async function zxingDecodeLoop(video) {
         const full = drawFull(video, 1280);
         if (full) {
           setDbg({ crop: 'full' });
-          text = await tryNativeBDOnCanvas(full, 'BD-full');
-          if (text) engineHit = 'BarcodeDetector';
-          if (!text && hasZXing) {
+          if (hasZXing) {
             text = decodeVariants(full, fmt128, 'zxing-full');
             if (!text) text = decodeVariants(full, fmtMulti, 'zxing-full-multi');
             if (text) engineHit = 'zxing';
           }
           if (!text) {
-            text = await tryZBarOnCanvas(full, 'zbar-full');
-            if (text) engineHit = 'zbar';
+            text = await tryNativeBDOnCanvas(full, 'BD-full');
+            if (text) engineHit = 'BarcodeDetector';
           }
+          // ZBar skipped on live full-frame
         }
-      }
-      if (!text && hasZXing && zxingReader128) {
-        try {
-          const result = await zxingReader128.decodeOnceFromVideoElement(video);
-          text = textFromResult(result);
-          if (text) engineHit = 'zxing-video';
-        } catch (_) {}
       }
       if (text && scanActive) onDecoded(text, engineHit || 'live');
     }
@@ -1167,9 +1165,7 @@ async function startScan() {
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
+        facingMode: 'environment'
       }
     });
     videoTrack = mediaStream.getVideoTracks()[0] || null;
@@ -1196,18 +1192,18 @@ async function startScan() {
       zxingReaderMulti = new ZXing.BrowserMultiFormatReader(buildHints(fmtMulti));
     }
 
-    // Recreate detector after stopScan() nulled it; BD RAF is primary live path
+    // Recreate detector after stopScan() nulled it; BD RAF runs parallel; ZXing loop is primary
     const hasNative = ensureNativeDetector();
     if (hasNative) startNativeLoop(video);
     zxingDecodeLoop(video);
 
     const engParts = [];
-    if (hasNative) engParts.push('BD*');
-    if (zxingReader128) engParts.push('zxing');
-    if (zbarLoaded) engParts.push('zbar');
+    if (zxingReader128) engParts.push('zxing*');
+    if (hasNative) engParts.push('BD');
+    // zbar not on live path
     const eng = engParts.length ? engParts.join('+') : 'no-decoder';
-    $('scanHint').textContent = VER + ' — BD-primary (' + eng + '): scan → saved → next.';
-    setDbg({ note: 'order BD→ZXing→ZBar | live: ' + eng + ' | ZBar ' + (zbarLoaded ? 'Y' : 'N') });
+    $('scanHint').textContent = VER + ' — ZXing-128-primary (' + eng + '): scan → saved → next.';
+    setDbg({ note: 'order ZXing→BD | ZBar off live | live: ' + eng + ' | ZBar loaded ' + (zbarLoaded ? 'Y(photo)' : 'N') });
   } catch (e) {
     const msg = (e && (e.message || e.name || String(e))) || 'unknown';
     $('scanErr').textContent = 'Camera: ' + msg + '. Tap Retry, or emergency Type # / phone. HTTPS + Allow Camera required.';
