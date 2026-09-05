@@ -81,8 +81,6 @@
   .err { color:var(--warn); font-size:14px; margin:8px 0; }
   .list button.match { text-align:left; width:100%; background:#fff; border:1px solid #ddd; border-radius:12px; padding:12px; margin:8px 0; cursor:pointer; }
   .gate { padding:40px 16px; }
-  #staffPick { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-  .staff-pick.selected { background:var(--g); color:#fff; border-color:var(--g); }
   .btn.export-text { background:#0d5c2e; color:#fff; margin-top:10px; font-size:17px; padding:16px; }
   .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
   .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:10px; }
@@ -104,22 +102,8 @@
     <div id="gatePassStep">
       <p class="sub">Staff only. Enter shared passcode.</p>
       <input id="pass" type="password" placeholder="Passcode" autocomplete="current-password">
-      <button class="btn primary" id="gateGo">Continue</button>
+      <button class="btn primary" id="gateGo">Start line</button>
       <p class="err hidden" id="gateErr">Wrong passcode</p>
-    </div>
-    <div id="gateStaffStep" class="hidden">
-      <p class="sub">Who is using <b>this phone</b>? (each phone keeps its own queue)</p>
-      <div class="row2" id="staffPick" style="margin:12px 0">
-        <button type="button" class="btn secondary staff-pick" data-staff="Aida">Aida</button>
-        <button type="button" class="btn secondary staff-pick" data-staff="Peter">Peter</button>
-        <button type="button" class="btn secondary staff-pick" data-staff="Yohan">Yohan</button>
-        <button type="button" class="btn secondary staff-pick" data-staff="Ruth">Ruth</button>
-        <button type="button" class="btn secondary staff-pick" data-staff="Pedro">Pedro</button>
-      </div>
-      <input id="staffCustom" type="text" placeholder="Or type your name" autocomplete="name" style="width:100%;font-size:18px;padding:14px;border:1px solid #ccc;border-radius:12px;margin:8px 0 12px">
-      <button class="btn primary" id="gateStaffGo">Start line</button>
-      <p class="err hidden" id="gateStaffErr">Enter or pick your name</p>
-      <p class="qcount hidden" id="gateQueueHint"></p>
     </div>
   </div>
 
@@ -135,7 +119,7 @@
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Photo-of-card line path (v20260905e). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905e.</p>
+        <p class="sub">Photo-of-card line path (v20260905f). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905f.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
@@ -148,7 +132,7 @@
         <button class="btn secondary" id="copyCasesBtn" type="button" style="margin-top:8px">Copy case #s</button>
         <button class="btn secondary" id="exportQueueBtn" type="button" style="margin-top:8px">Download JSONL + case-numbers.txt</button>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260905e — Frame → Snap → SAVED → Copy case #s / Download JSONL (this phone only).</p>
+        <p class="hint" id="scanHint">v20260905f — Frame → Snap → SAVED → Copy case #s / Download JSONL (this phone only).</p>
         <pre class="dbg" id="scanDbg" style="display:none">dbg: waiting…</pre>
         <input id="photoPick" type="file" accept="image/*" capture="environment">
         <button type="button" class="more-toggle" id="moreToggle">More ▾</button>
@@ -231,7 +215,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260905e';
+const VER = 'v20260905f';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -794,19 +778,17 @@ function sanitizeBarcodeText(raw) {
 }
 
 const STAFF_KEY = 'mb-pantry-staff';
+const DEFAULT_STAFF = 'Miami Bethany';
 let currentStaff = '';
 
+/** Single-user mode: last saved staff or Miami Bethany. Never clears queues. */
 function staffForCapture() {
-  const s = (currentStaff || localStorage.getItem(STAFF_KEY) || '').trim();
-  if (s) return s;
-  const t = (($('staffLabel') && $('staffLabel').textContent) || '').trim();
-  if (!t || /cases loaded|missing|lookup|miami bethany/i.test(t)) return '';
-  return t;
+  const s = (currentStaff || localStorage.getItem(STAFF_KEY) || DEFAULT_STAFF).trim();
+  return s || DEFAULT_STAFF;
 }
 
 function setStaff(name) {
-  currentStaff = String(name || '').trim();
-  if (!currentStaff) return false;
+  currentStaff = String(name || '').trim() || DEFAULT_STAFF;
   localStorage.setItem(STAFF_KEY, currentStaff);
   if ($('staffLabel')) $('staffLabel').textContent = currentStaff;
   return true;
@@ -836,7 +818,7 @@ function captureScan(decoded, source) {
     case: caseGuess,
     name: hit ? (hit.name || '') : '',
     matched: !!hit,
-    staff: staffForCapture() || 'UNKNOWN',
+    staff: staffForCapture(),
     mode: 'capture-first',
     source: source || 'live',
     ver: VER
@@ -1440,46 +1422,21 @@ async function enterAppAfterStaff() {
   } catch (e) {
     setDbg({ note: 'Lookup file missing · staff ' + staffForCapture() });
   }
-  if ($('staffLabel')) $('staffLabel').textContent = staffForCapture() || 'Set staff';
+  if ($('staffLabel')) $('staffLabel').textContent = staffForCapture();
   refreshQueueCount();
   show('screen-scan');
   startScan();
 }
 
-$('gateGo').onclick = () => {
+$('gateGo').onclick = async () => {
   if ($('pass').value !== PASS) {
     $('gateErr').classList.remove('hidden');
     return;
   }
   $('gateErr').classList.add('hidden');
-  $('gatePassStep').classList.add('hidden');
-  $('gateStaffStep').classList.remove('hidden');
+  // Single-user: keep last saved staff if any, else Miami Bethany. Do NOT wipe queues.
   const saved = (localStorage.getItem(STAFF_KEY) || '').trim();
-  if (saved) {
-    $('staffCustom').value = saved;
-    document.querySelectorAll('.staff-pick').forEach(b => {
-      b.classList.toggle('selected', b.getAttribute('data-staff') === saved);
-    });
-  }
-  refreshQueueCount();
-};
-
-document.querySelectorAll('.staff-pick').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.staff-pick').forEach(b => b.classList.remove('selected'));
-    btn.classList.add('selected');
-    $('staffCustom').value = btn.getAttribute('data-staff') || '';
-  });
-});
-
-$('gateStaffGo').onclick = async () => {
-  const picked = document.querySelector('.staff-pick.selected');
-  const name = (($('staffCustom').value || '') || (picked && picked.getAttribute('data-staff')) || '').trim();
-  if (!setStaff(name)) {
-    $('gateStaffErr').classList.remove('hidden');
-    return;
-  }
-  $('gateStaffErr').classList.add('hidden');
+  setStaff(saved || DEFAULT_STAFF);
   await enterAppAfterStaff();
 };
 
