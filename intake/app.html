@@ -32,6 +32,9 @@
   }
   .btn { display:block; width:100%; border:0; border-radius:12px; padding:14px 16px; font-size:16px; font-weight:700; cursor:pointer; }
   .btn.primary { background:var(--g); color:#fff; }
+  .btn.snap { background:var(--g); color:#fff; font-size:20px; padding:22px 16px; margin-top:12px;
+    box-shadow:0 4px 14px rgba(26,159,75,.35); }
+  .btn.snap:active { transform:scale(.98); }
   .btn.secondary { background:#fff; color:var(--g); border:2px solid var(--g); }
   .btn.ghost { background:#eee; color:#333; }
   .btn + .btn { margin-top:10px; }
@@ -103,20 +106,21 @@
     <main>
       <section id="screen-scan">
         <h1>Scan Oasis Barcode</h1>
-        <p class="sub">Capture-first + ZXing CODE_128-primary (iOS live). BD parallel; ZBar off live. Hard refresh ?v=20260905a.</p>
+        <p class="sub">Photo-of-card line path (v20260905b). Frame the barcode, then tap <b>Snap ID barcode</b>. Live preview is for framing only — decode uses a still frame. Hard refresh ?v=20260905b.</p>
         <input id="wedge" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Hardware scanner">
         <div class="cam-wrap" id="camWrap">
           <video id="scanVideo" playsinline webkit-playsinline muted autoplay></video>
           <div class="scan-guide" id="scanGuide"></div>
         </div>
         <canvas id="scanCanvas" class="hidden" aria-hidden="true"></canvas>
+        <button class="btn snap" id="snapCardBtn" type="button">Snap ID barcode</button>
         <p class="err hidden" id="scanErr"></p>
-        <p class="hint" id="scanHint">v20260905a — ZXing-128-primary capture-first: scan → saved → next.</p>
+        <p class="hint" id="scanHint">v20260905b — Frame barcode → Snap → saved → next.</p>
         <pre class="dbg" id="scanDbg">dbg: waiting…</pre>
         <button class="btn torch" id="torchBtn" disabled>Torch</button>
         <div class="row2" style="margin-top:10px">
           <button class="btn secondary" id="retryCam">Retry camera</button>
-          <button class="btn secondary" id="photoTestBtn">Test with photo</button>
+          <button class="btn secondary" id="photoTestBtn">Camera roll / file</button>
         </div>
         <input id="photoPick" type="file" accept="image/*" capture="environment">
         <div class="row2">
@@ -127,9 +131,9 @@
         <a class="tiny-link" id="showTestBarcode" href="#">show test barcode (00378814)</a>
         <div id="testBarcodeBox" class="hidden">
           <img id="testBarcodeImg" alt="Code-128 00378814" src="test-barcode.png">
-          <p class="hint">Point phone at this Code-128 (00378814 / Ana Ramos).</p>
+          <p class="hint">Use Snap ID barcode on this Code-128 (00378814 / Ana Ramos).</p>
         </div>
-        <p class="hint">Emergency only: type case # or search phone. Sunday plan = phone camera scan.</p>
+        <p class="hint">Line day = Snap ID barcode (still frame). Type # / phone = emergency only.</p>
       </section>
 
       <section id="screen-manual" class="hidden">
@@ -191,7 +195,7 @@ const PASS = 'Pedro@2008!';
 const QUEUE_KEY = 'mb-pantry-queue';
 const BACKUP_KEY = 'mb-pantry-backup';
 const HOLD_MS = 2500;
-const VER = 'v20260905a';
+const VER = 'v20260905b';
 let cases = [];
 let mediaStream = null;
 let videoTrack = null;
@@ -700,13 +704,13 @@ function flashCapture(row) {
   if (captureFlashTimer) clearTimeout(captureFlashTimer);
   captureFlashTimer = setTimeout(() => {
     if ($('scanHint') === hint && !$('screen-scan').classList.contains('hidden')) {
-      hint.textContent = VER + ' — Capture-first: scan → saved → next.';
+      hint.textContent = VER + ' — Frame → Snap → saved → next.';
     }
   }, 1000);
 }
 
 function onDecoded(decoded, source) {
-  if (!scanActive && source !== 'photo') return;
+  if (!scanActive && source !== 'photo' && source !== 'snap') return;
   const rawIn = String(decoded || '');
   decoded = sanitizeBarcodeText(decoded);
   setDbg({ raw: rawIn + (decoded !== rawIn ? (' → ' + decoded) : ''), engine: source || dbg.engine });
@@ -1192,18 +1196,15 @@ async function startScan() {
       zxingReaderMulti = new ZXing.BrowserMultiFormatReader(buildHints(fmtMulti));
     }
 
-    // Recreate detector after stopScan() nulled it; BD RAF runs parallel; ZXing loop is primary
-    const hasNative = ensureNativeDetector();
-    if (hasNative) startNativeLoop(video);
-    zxingDecodeLoop(video);
-
+    // Preview-only: do NOT start continuous live decode (symptom B). Decode on Snap / photo.
+    ensureNativeDetector();
     const engParts = [];
-    if (zxingReader128) engParts.push('zxing*');
-    if (hasNative) engParts.push('BD');
-    // zbar not on live path
-    const eng = engParts.length ? engParts.join('+') : 'no-decoder';
-    $('scanHint').textContent = VER + ' — ZXing-128-primary (' + eng + '): scan → saved → next.';
-    setDbg({ note: 'order ZXing→BD | ZBar off live | live: ' + eng + ' | ZBar loaded ' + (zbarLoaded ? 'Y(photo)' : 'N') });
+    if (zxingReader128) engParts.push('zxing');
+    if (nativeDetector) engParts.push('BD');
+    if (zbarLoaded) engParts.push('zbar');
+    const eng = engParts.length ? engParts.join('+') : 'loading';
+    $('scanHint').textContent = VER + ' — Frame barcode, tap Snap (' + eng + ' still).';
+    setDbg({ note: 'photo-of-card line path | preview only | still decode: ZXing→BD→ZBar | ' + eng });
   } catch (e) {
     const msg = (e && (e.message || e.name || String(e))) || 'unknown';
     $('scanErr').textContent = 'Camera: ' + msg + '. Tap Retry, or emergency Type # / phone. HTTPS + Allow Camera required.';
@@ -1379,13 +1380,13 @@ async function decodeStillImage(imgOrCanvas) {
         crop: 'photo ' + info.band + ' @' + up + 'x',
         engine: 'photo'
       });
-      text = await tryNativeBDOnCanvas(info.canvas, 'BD-photo');
-      if (text) { engineHit = 'BarcodeDetector'; break; }
       if (hasZXing) {
         text = decodeVariants(info.canvas, fmt128, 'zxing-photo' + info.band);
         if (!text) text = decodeVariants(info.canvas, fmtMulti, 'zxing-photo-multi' + info.band);
         if (text) { engineHit = 'zxing'; break; }
       }
+      text = await tryNativeBDOnCanvas(info.canvas, 'BD-photo');
+      if (text) { engineHit = 'BarcodeDetector'; break; }
       text = await tryZBarOnCanvas(info.canvas, 'zbar-photo' + info.band);
       if (text) { engineHit = 'zbar'; break; }
     }
@@ -1394,12 +1395,14 @@ async function decodeStillImage(imgOrCanvas) {
     const full = drawFull(imgOrCanvas, 1600);
     if (full) {
       setDbg({ crop: 'photo-full' });
-      text = await tryNativeBDOnCanvas(full, 'BD-photo-full');
-      if (text) engineHit = 'BarcodeDetector';
-      if (!text && hasZXing) {
+      if (hasZXing) {
         text = decodeVariants(full, fmt128, 'zxing-photo-full');
         if (!text) text = decodeVariants(full, fmtMulti, 'zxing-photo-full-multi');
         if (text) engineHit = 'zxing';
+      }
+      if (!text) {
+        text = await tryNativeBDOnCanvas(full, 'BD-photo-full');
+        if (text) engineHit = 'BarcodeDetector';
       }
       if (!text) {
         text = await tryZBarOnCanvas(full, 'zbar-photo-full');
@@ -1411,6 +1414,55 @@ async function decodeStillImage(imgOrCanvas) {
   return text;
 }
 
+async function decodeStillAndCapture(imgOrCanvas, sourceTag) {
+  $('scanErr').classList.add('hidden');
+  setDbg({ engine: sourceTag || 'snap', note: 'decoding still…' });
+  try {
+    const text = await decodeStillImage(imgOrCanvas);
+    if (text) {
+      // Force allow capture even if preview not yet marked active
+      const prev = scanActive;
+      if (!scanActive) scanActive = true;
+      onDecoded(text, sourceTag || 'snap');
+      scanActive = prev || scanActive;
+      return true;
+    }
+    const msg = 'No barcode in that snap. Fill the green box, hold steady, Snap again.';
+    $('scanErr').textContent = msg;
+    $('scanErr').classList.remove('hidden');
+    setDbg({ note: msg });
+    return false;
+  } catch (e) {
+    const msg = 'Snap decode failed: ' + ((e && e.message) || e);
+    $('scanErr').textContent = msg;
+    $('scanErr').classList.remove('hidden');
+    return false;
+  }
+}
+
+function grabPreviewFrame() {
+  const video = $('scanVideo');
+  if (!video || !video.videoWidth) return null;
+  const c = document.createElement('canvas');
+  c.width = video.videoWidth;
+  c.height = video.videoHeight;
+  const ctx = c.getContext('2d', { willReadFrequently: true }) || c.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(video, 0, 0, c.width, c.height);
+  return c;
+}
+
+$('snapCardBtn').onclick = async () => {
+  const frame = grabPreviewFrame();
+  if (frame) {
+    await decodeStillAndCapture(frame, 'snap');
+    return;
+  }
+  // No preview yet — fall back to native camera capture input
+  const pick = $('photoPick');
+  if (pick) pick.click();
+};
+
 $('photoTestBtn').onclick = () => {
   const pick = $('photoPick');
   if (pick) pick.click();
@@ -1419,8 +1471,6 @@ $('photoPick').onchange = async (ev) => {
   const f = ev.target.files && ev.target.files[0];
   ev.target.value = '';
   if (!f) return;
-  $('scanErr').classList.add('hidden');
-  setDbg({ engine: 'photo', note: 'decoding still…' });
   try {
     const url = URL.createObjectURL(f);
     const img = new Image();
@@ -1430,15 +1480,7 @@ $('photoPick').onchange = async (ev) => {
       img.src = url;
     });
     URL.revokeObjectURL(url);
-    const text = await decodeStillImage(img);
-    if (text) {
-      onDecoded(text, 'photo');
-    } else {
-      const msg = 'Photo: no barcode found. Try flatter lighting / closer crop.';
-      $('scanErr').textContent = msg;
-      $('scanErr').classList.remove('hidden');
-      setDbg({ note: msg });
-    }
+    await decodeStillAndCapture(img, 'photo');
   } catch (e) {
     const msg = 'Photo decode failed: ' + ((e && e.message) || e);
     $('scanErr').textContent = msg;
