@@ -76,6 +76,11 @@
         <button class="btn primary" id="dlCsv">Download CSV</button>
         <button class="btn secondary" id="dlJson">Download JSON</button>
       </div>
+      <button class="btn primary" id="dlJsonl">Download JSONL for Intake Queue</button>
+      <button class="btn primary" id="exportText">Export to text</button>
+      <button class="btn secondary" id="copyCases">Copy case #s</button>
+      <p class="sub">Case #s = comma-separated <code>C…</code> from <b>this phone</b> queue only (each staff phone is separate).</p>
+      <p class="sub">JSONL = one capture per line for <code>returning-captures.jsonl</code> on the box. Phone queue does not auto-sync.</p>
       <button class="btn secondary" id="dlFull">Download full backup JSON</button>
       <button class="btn ghost" id="copyText">Copy text</button>
       <button class="btn ghost" id="markExported">Mark exported to Oasis</button>
@@ -136,6 +141,31 @@ function stamp() {
   const d = new Date();
   const p = (x) => String(x).padStart(2,'0');
   return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+function normalizeCaseNum(row) {
+  let c = String((row && row.case) || '').trim().toUpperCase();
+  if (c && !c.startsWith('C')) {
+    const d = c.replace(/\D/g, '');
+    if (d) c = 'C' + (d.replace(/^0+/, '') || d);
+  }
+  if (!c || c === 'C') {
+    const bc = String((row && row.barcode) || '').replace(/\D/g, '');
+    if (bc) c = 'C' + (bc.replace(/^0+/, '') || bc);
+  }
+  if (!c || c === 'C') return '';
+  const m = c.match(/^C0*(\d+)$/);
+  return m ? ('C' + m[1]) : c;
+}
+function caseParagraphFromRows(rows) {
+  const seen = new Set();
+  const out = [];
+  (rows || []).forEach(r => {
+    const c = normalizeCaseNum(r);
+    if (!c || seen.has(c)) return;
+    seen.add(c);
+    out.push(c);
+  });
+  return out.join(', ');
 }
 function download(filename, text, mime) {
   const blob = new Blob([text], { type: mime || 'text/plain' });
@@ -208,6 +238,41 @@ $('dlCsv').onclick = () => {
   if (!q.length) { flash(false, 'Queue is empty.'); return; }
   download('pantry-queue-' + stamp() + '.csv', toCsv(q), 'text/csv');
   flash(true, 'CSV downloaded (' + q.length + ' rows).');
+};
+$('dlJsonl').onclick = () => {
+  const q = load(QUEUE_KEY);
+  if (!q.length) { flash(false, 'Queue empty'); return; }
+  const st = stamp();
+  const jsonl = q.map(r => JSON.stringify(r)).join('\n') + '\n';
+  const para = caseParagraphFromRows(q);
+  download('returning-captures-' + st + '.jsonl', jsonl, 'application/x-ndjson');
+  download('case-numbers-' + st + '.txt', para + '\n', 'text/plain');
+  flash(true, 'Downloaded JSONL + case-numbers.txt (' + q.length + ' rows). This phone only.');
+};
+$('exportText').onclick = () => {
+  const q = load(QUEUE_KEY);
+  if (!q.length) { flash(false, 'Queue empty'); return; }
+  const para = caseParagraphFromRows(q);
+  const lines = ['Returning captures', 'Cases: ' + para, 'Count: ' + q.length, ''];
+  q.forEach((r,i) => lines.push((i+1)+'. '+normalizeCaseNum(r)+' · '+(r.name||'—')+' · '+(r.staff||'')+' · '+(r.at||'')));
+  const st = stamp();
+  download('returning-export-'+st+'.txt', lines.join('\n')+'\n', 'text/plain');
+  download('case-numbers-'+st+'.txt', para+'\n', 'text/plain');
+  flash(true, 'Exported text + case-numbers.txt');
+};
+$('copyCases').onclick = async () => {
+  const q = load(QUEUE_KEY);
+  const para = caseParagraphFromRows(q);
+  if (!para) { flash(false, 'No case #s in this phone queue'); return; }
+  try {
+    await navigator.clipboard.writeText(para);
+    flash(true, 'Copied: ' + para);
+  } catch (e) {
+    try { window.prompt('Copy case #s:', para); } catch (_) {}
+    flash(false, 'Clipboard blocked — use prompt/manual copy');
+  }
+  $('copyBox').value = para;
+  $('copyBox').classList.remove('hidden');
 };
 $('dlJson').onclick = () => {
   const q = load(QUEUE_KEY);
